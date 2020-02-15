@@ -7,7 +7,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.sparse import csc_matrix
 from scipy.sparse.linalg import spsolve, factorized
-
 np.set_printoptions(linewidth=2000)
 # --------------------------- END LIBRARIES
 
@@ -122,10 +121,9 @@ pq = vec_busos_PQ
 pv = vec_busos_PV
 np.sort(pqpv)
 llarg = 2 * num_busos_PQ + 3 * num_busos_PV  # number of unknowns
-RHS = np.zeros(llarg, dtype=float)  # vector of the RHS data. Each element has to be real
-k = 0  # index that will go through the rows
 
 valor = np.zeros(n - 1, dtype=complex)
+
 valor[pq - 1] = (V_slack - 1) * vec_Y0[pq - 1, 0] + (vec_P[pq - 1, 0] - vec_Q[pq - 1, 0] * 1j) * X[0, pq - 1] + U[
     0, pq - 1] * vec_shunts[pq - 1, 0]
 valor[pv - 1] = (V_slack - 1) * vec_Y0[pv - 1, 0] + (vec_P[pv - 1, 0]) * X[0, pv - 1] + U[0, pv - 1] * vec_shunts[
@@ -145,39 +143,35 @@ rhs = rhs[~np.isnan(rhs)]  # eliminant les caselles dummy
 
 
 mat = np.zeros((llarg, 2 * (n - 1) + num_busos_PV), dtype=complex)  # constant matrix
-mat2 = np.zeros((llarg, 2 * (n - 1) + num_busos_PV), dtype=complex)  # constant matrix
 k = 0  # index that will go through the rows
-l = 0  # index that will go through the columns
+
 
 for i in range(n - 1):  # fill the matrix
-    l = 0
+    lx = 0
     for j in range(n - 1):
-        mat[k, l] = G[i, j]
-        mat[k + 1, l] = B[i, j]
-        mat[k, l + 1] = -B[i, j]
-        mat[k + 1, l + 1] = G[i, j]
+        mat[k, lx] = G[i, j]
+        mat[k + 1, lx] = B[i, j]
+        mat[k, lx + 1] = -B[i, j]
+        mat[k + 1, lx + 1] = G[i, j]
         if i + 1 in vec_busos_PQ:
             if j + 1 in vec_busos_PQ:
-                l = l + 2
+                lx = lx + 2
             else:
-                l = l + 3
+                lx = lx + 3
         else:
             if j + 1 not in vec_busos_PV:
-                l = l + 2  # 2 columns done
+                lx = lx + 2  # 2 columns done
             else:
                 if j == i:
-                    mat[k + 2, l] = 2 * U_re[0, i]
-                    mat[k + 2, l + 1] = 2 * U_im[0, i]
-                    mat[k, l + 2] = -X_im[0, i]
-                    mat[k + 1, l + 2] = X_re[0, i]
-                l = l + 3
+                    mat[k + 2, lx] = 2 * U_re[0, i]
+                    mat[k + 2, lx + 1] = 2 * U_im[0, i]
+                    mat[k, lx + 2] = -X_im[0, i]
+                    mat[k + 1, lx + 2] = X_re[0, i]
+                lx = lx + 3
     if i + 1 in vec_busos_PQ:
-        k=k+2
+        k = k+2
     else:
-        k=k+3
-
-
-
+        k = k+3
 
 # Solve
 # mat only has to be inverted once
@@ -186,8 +180,7 @@ LHS = mat_factorized(rhs)
 
 LHSx = RHSx
 LHSx2 = [[LHS[i + 3 * j - np.count_nonzero(np.isnan(RHSx[:, :j]))] if ~np.isnan(LHSx[i, j]) else np.nan for j in
-          range(n - 1)] for
-         i in range(3)]
+          range(n - 1)] for i in range(3)]
 
 U_re[1, :] = LHSx2[0][:]
 U_im[1, :] = LHSx2[1][:]
@@ -216,7 +209,6 @@ def conv(A, B, c, i, tipus):
 
 
 for c in range(2, prof):  # c defines the current depth
-
     valor = np.zeros(n - 1, dtype=complex)
     valor[pq - 1] = (vec_P[pq - 1, 0] - vec_Q[pq - 1, 0] * 1j) * X[c - 1, pq - 1] + U[c - 1, pq - 1] * vec_shunts[
         pq - 1, 0]
