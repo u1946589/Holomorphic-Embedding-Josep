@@ -7,10 +7,13 @@ import pandas as pd
 from scipy.sparse import csc_matrix
 from scipy.sparse.linalg import spsolve, factorized
 np.set_printoptions(linewidth=2000)
+pd.set_option('display.max_rows', 500)
+pd.set_option('display.max_columns', 500)
+pd.set_option('display.width', 1000)
 # --------------------------- END LIBRARIES
 
 # --------------------------- INITIAL DATA: Y, SHUNTS AND Y0i
-df_top = pd.read_excel('Data.xlsx', sheet_name='Topology')  # DataFrame of the topology
+df_top = pd.read_excel('Dades_v1.xlsx', sheet_name='Topology')  # DataFrame of the topology
 
 busos_coneguts = []  # vector to store the indices of the found buses
 [busos_coneguts.append(df_top.iloc[i, j]) for i in range(df_top.shape[0]) for j in range(0, 2) if
@@ -91,11 +94,11 @@ vec_W = vec_V**2
 # --------------------------- PREPARING IMPLEMENTATION
 prof = 30  # depth
 U = np.zeros((prof, n - 1), dtype=complex)  # voltages
-U_re = np.zeros((prof, n - 1), dtype=complex)  # real part of voltages
-U_im = np.zeros((prof, n - 1), dtype=complex)  # imaginary part of voltages
+U_re = np.zeros((prof, n - 1), dtype=float)  # real part of voltages
+U_im = np.zeros((prof, n - 1), dtype=float)  # imaginary part of voltages
 X = np.zeros((prof, n - 1), dtype=complex)  # X=1/conj(U)
-X_re = np.zeros((prof, n - 1), dtype=complex)  # real part of X
-X_im = np.zeros((prof, n - 1), dtype=complex)  # imaginary part of X
+X_re = np.zeros((prof, n - 1), dtype=float)  # real part of X
+X_im = np.zeros((prof, n - 1), dtype=float)  # imaginary part of X
 Q = np.zeros((prof, n - 1), dtype=complex)  # unknown reactive powers
 pqpv = np.r_[vec_busos_PQ, vec_busos_PV]
 pq = vec_busos_PQ
@@ -148,7 +151,8 @@ RHSx[2, pv - 1] = vec_W[pv - 1, 0] - 1
 rhs = np.matrix.flatten(RHSx, 'f')
 rhs = rhs[~np.isnan(rhs)]  # delete dummy cells
 
-mat = np.zeros((dimensions, 2 * (n - 1) + npv), dtype=complex)  # constant matrix
+mat = np.zeros((dimensions, dimensions), dtype=float)  # constant matrix
+
 k = 0  # index that will go through the rows
 for i in range(n - 1):  # fill the matrix
     lx = 0
@@ -191,14 +195,12 @@ def conv(A, B, c, i, tipus):
         return sum(suma)
     elif tipus == 3:
         suma = [A[k, i] * np.conj(B[c - k, i]) for k in range(1, c)]
-        return sum(suma)
+        return sum(suma).real
 
 
 for c in range(2, prof):  # c defines the current depth
-    valor[pq - 1] = (vec_P[pq - 1, 0] - vec_Q[pq - 1, 0] * 1j) * X[c - 1, pq - 1] + U[c - 1, pq - 1] * vec_shunts[
-        pq - 1, 0]
-    valor[pv - 1] = conv(X, Q, c, pv - 1, 2) * (-1) * 1j + U[c - 1, pv - 1] * vec_shunts[pv - 1, 0] + \
-        X[c - 1, pv - 1] * vec_P[pv - 1, 0]
+    valor[pq - 1] = (vec_P[pq - 1, 0] - vec_Q[pq - 1, 0] * 1j) * X[c - 1, pq - 1] + U[c - 1, pq - 1] * vec_shunts[pq - 1, 0]
+    valor[pv - 1] = conv(X, Q, c, pv - 1, 2) * -1j + U[c - 1, pv - 1] * vec_shunts[pv - 1, 0] + X[c - 1, pv - 1] * vec_P[pv - 1, 0]
 
     RHSx[0, pq - 1] = valor[pq - 1].real
     RHSx[1, pq - 1] = valor[pq - 1].imag
@@ -206,7 +208,7 @@ for c in range(2, prof):  # c defines the current depth
 
     RHSx[0, pv - 1] = valor[pv - 1].real
     RHSx[1, pv - 1] = valor[pv - 1].imag
-    RHSx[2, pv - 1] = -conv(U, U, c, pv - 1, 3)
+    RHSx[2, pv - 1] = -conv(U, U, c, pv - 1, 3).real  # square of the voltage stores the value at the real part
 
     rhs = np.matrix.flatten(RHSx, 'f')
     rhs = rhs[~np.isnan(rhs)]
@@ -233,11 +235,37 @@ I_shunt[:] = -U_final[:] * vec_shunts[:, 0]  # change the sign again
 I_generada = I_serie - I_inj_slack + I_shunt  # current leaving the bus
 I_gen2 = [(vec_P[i, 0] - vec_Q[i, 0] * 1j) / np.conj(U_final[i]) if i + 1 in pq else
           (vec_P[i, 0] - sum(Q[:, i] * 1j)) / np.conj(U_final[i]) for i in range(n - 1)]
+I_gen2 = np.array(I_gen2)
 
-print(U_final)
-print(abs(U_final))
+
 print(I_gen2 - I_generada)  # current balance. Should be almost 0
 Qdf = pd.DataFrame(Q)  # to check the unknown reactive power
 Qdf.to_excel('Results_reactive_power.xlsx', index=False, header=False)
 Udf = pd.DataFrame(U)
 Udf.to_excel('Results_voltage_coefficients.xlsx', index=False, header=False)  # to check the voltages
+
+print('Coefficients')
+print(Udf)
+
+# ----------------------------------------------------------------------------------------------------------------------
+# Newton-Raphson comparison
+# ----------------------------------------------------------------------------------------------------------------------
+V_nr = np.array([1.+0.j,
+                 0.9534313 -0.02268264j,
+                 0.94114008-0.03194917j,
+                 0.93894126-0.01876796j,
+                 0.94938523-0.03417151j,
+                 0.93991439-0.0126862j ,
+                 0.92929251-0.02953734j,
+                 0.93540855-0.02732348j,
+                 0.9097992 -0.01911601j,
+                 0.94537686-0.03929395j,
+                 0.97988783-0.01482682j,
+                 0.91993789-0.01068987j])  # voltage from GridCal with 1e-7 error
+
+ok = np.isclose(np.abs(U_final), np.abs(V_nr[1:]), atol=1e-2).all()
+print('Test passed', ok)
+if not ok:
+    print('It should be:')
+    print(np.abs(V_nr[1:]))
+
