@@ -123,13 +123,13 @@ valor[pq - 1] = (V_slack - 1) * vec_Y0[pq - 1, 0] + (vec_P[pq - 1, 0] - vec_Q[pq
 valor[pv - 1] = (V_slack - 1) * vec_Y0[pv - 1, 0] + (vec_P[pv - 1, 0]) * X[0, pv - 1] + U[0, pv - 1] * vec_shunts[
     pv - 1, 0]
 
-RHS = np.zeros(2*(n - 1) + npv, dtype=complex) #RHS ben muntat! ara canviar mat
+RHS = np.zeros(2*(n - 1) + npv, dtype=complex)
 RHS[pq - 1] = np.real(valor[pq - 1])
 RHS[pv - 1] = np.real(valor[pv - 1])
 RHS[n - 1 + (pq - 1)] = np.imag(valor[pq - 1])
 RHS[n - 1 + (pv - 1)] = np.imag(valor[pv - 1])
 RHS[2 * (n - 1):] = vec_W[pv - 1, 0] - 1
-#print(RHS[2 * (n - 1):])
+
 
 
 MAT = lil_matrix((dimensions, 2 * (n - 1) + npv), dtype=complex)
