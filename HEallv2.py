@@ -1,5 +1,6 @@
-# AUTHOR: Josep Fanals Batllori
-# CONTACT: u1946589@campus.udg.edu.
+# AUTHORS: Santiago Peñate Vera and Josep Fanals Batllori
+# CONTACT:  santiago.penate.vera@gmail.com, u1946589@campus.udg.edu
+# thanks to Llorenç Fanals Batllori for his help at coding
 
 # --------------------------- LIBRARIES
 import numpy as np
