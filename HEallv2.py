@@ -225,7 +225,7 @@ Qfinal = vec_Q.copy()
 Qfinal[pv-1] = (Q[:, pv-1] * 1j).sum(axis=0).imag
 
 # compute the current injections
-I_gen2 = (vec_P - vec_Q * 1j) / np.conj(U_final)
+I_gen2 = (vec_P - Qfinal * 1j) / np.conj(U_final)
 
 # print(U_final)
 # print(abs(U_final))
