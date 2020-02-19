@@ -5,8 +5,8 @@
 # --------------------------- LIBRARIES
 import numpy as np
 import pandas as pd
-from scipy.sparse import csc_matrix
-from scipy.sparse import lil_matrix, diags
+from scipy.sparse import csc_matrix, coo_matrix
+from scipy.sparse import lil_matrix, diags, hstack, vstack
 from scipy.sparse.linalg import spsolve, factorized
 np.set_printoptions(linewidth=2000)
 pd.set_option('display.max_rows', 500)
@@ -147,41 +147,27 @@ valor[pq] = prod[pq] - Ysl[pq].sum(axis=1) + (vec_P[pq] - vec_Q[pq] * 1j) * X[0,
 valor[pv] = prod[pv] - Ysl[pv].sum(axis=1) + (vec_P[pv]) * X[0, pv] + U[0, pv] * vec_shunts[pv, 0]
 
 
-RHS = np.zeros(2*npqpv + npv, dtype=float)
-RHS[pq] = valor[pq].real
-RHS[pv] = valor[pv].real
-RHS[npqpv + pq] = valor[pq].imag
-RHS[npqpv + pv] = valor[pv].imag
-RHS[2 * npqpv:] = vec_W[pv] - 1
+# compose the right-hand side vector
+RHS = np.r_[valor.real,
+            valor.imag,
+            vec_W[pv] - 1.0]
 
+# Form the system matrix (MAT)
+VRE = coo_matrix((2 * U_re[0, pv], (np.arange(npv), pv)), shape=(npv, npqpv)).tocsc()
+VIM = coo_matrix((2 * U_im[0, pv], (np.arange(npv), pv)), shape=(npv, npqpv)).tocsc()
+XIM = coo_matrix((-X_im[0, pv], (pv, np.arange(npv))), shape=(npqpv, npv)).tocsc()
+XRE = coo_matrix((X_re[0, pv], (pv, np.arange(npv))), shape=(npqpv, npv)).tocsc()
+EMPTY = csc_matrix((npv, npv))
 
-MAT = lil_matrix((dimensions, dimensions), dtype=float)
-MAT[:npqpv, :npqpv] = G
-MAT[npqpv:2 * npqpv, :npqpv] = B
-MAT[:npqpv, npqpv:2 * npqpv] = -B
-MAT[npqpv:2 * npqpv, npqpv:2 * npqpv] = G
-
-MAT_URE = np.zeros((npqpv, npqpv), dtype=float)
-np.fill_diagonal(MAT_URE, 2 * U_re[0, :])
-MAT[2 * npqpv:, :npqpv] = np.delete(MAT_URE, list(pq), axis=0)
-
-MAT_UIM = np.zeros((npqpv, npqpv), dtype=float)
-np.fill_diagonal(MAT_UIM, 2 * U_im[0, :])
-MAT[2 * npqpv:, npqpv:2 * npqpv] = np.delete(MAT_UIM, list(pq), axis=0)
-
-MAT_XIM = np.zeros((npqpv, npqpv), dtype=float)
-np.fill_diagonal(MAT_XIM, -X_im[0, :])
-MAT[:npqpv, 2 * npqpv:] = np.delete(MAT_XIM, list(pq), axis=1)
-
-MAT_XRE = np.zeros((npqpv, npqpv), dtype=float)
-np.fill_diagonal(MAT_XRE, X_re[0, :])
-MAT[npqpv:2 * npqpv, 2 * npqpv:] = np.delete(MAT_XRE, list(pq), axis=1)
+MAT = vstack((hstack((G,   -B,   XIM)),
+              hstack((B,    G,   XRE)),
+              hstack((VRE,  VIM, EMPTY))), format='csc')
 
 # factorize (only once)
-MAT_csc = factorized(MAT.tocsc())
+MAT_LU = factorized(MAT.tocsc())
 
 # solve
-LHS = MAT_csc(RHS)
+LHS = MAT_LU(RHS)
 
 U_re[1, :] = LHS[:npqpv]
 U_im[1, :] = LHS[npqpv:2 * npqpv]
@@ -207,25 +193,24 @@ def conv(A, B, c, i, tipus):
         return sum(suma)
 
 
+range_pqpv = np.arange(npqpv)
 for c in range(2, prof):  # c defines the current depth
 
     valor[pq] = (vec_P[pq] - vec_Q[pq] * 1j) * X[c - 1, pq] + U[c - 1, pq] * vec_shunts[pq, 0]
     valor[pv] = conv(X, Q, c, pv, 2) * -1j + U[c - 1, pv] * vec_shunts[pv, 0] + X[c - 1, pv] * vec_P[pv]
 
-    RHS[pq] = valor[pq].real
-    RHS[pv] = valor[pv].real
-    RHS[npqpv + pq] = valor[pq].imag
-    RHS[npqpv + pv] = valor[pv].imag
-    RHS[2 * npqpv:] = -conv(U, U, c, pv, 3).real  # the convolution of 2 complex is real :)
+    RHS = np.r_[valor.real,
+                valor.imag,
+                -conv(U, U, c, pv, 3).real]
 
-    LHS = MAT_csc(RHS)
+    LHS = MAT_LU(RHS)
 
     U_re[c, :] = LHS[:npqpv]
     U_im[c, :] = LHS[npqpv:2 * npqpv]
     Q[c - 1, pv] = LHS[2 * npqpv:]
 
     U[c, :] = U_re[c, :] + U_im[c, :] * 1j
-    X[c, range(npqpv)] = -conv(U, X, c, range(npqpv), 1) / np.conj(U[0, range(npqpv)])
+    X[c, range_pqpv] = -conv(U, X, c, range_pqpv, 1) / np.conj(U[0, range_pqpv])
     X_re[c, :] = np.real(X[c, :])
     X_im[c, :] = np.imag(X[c, :])
 # .......................CALCULATION OF TERMS [>=2]. DONE
