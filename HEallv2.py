@@ -142,7 +142,8 @@ valor = np.zeros(npqpv, dtype=complex)
 
 prod = np.dot((Ysl[pqpv_, :]), V_sl[:])
 
-valor[pq_] = prod[pq_] - Ysl[pq_].sum(axis=1) + (vec_P[pq_] - vec_Q[pq_] * 1j) * X[0, pq_] + U[0, pq_] * vec_shunts[pq_, 0]
+valor[pq_] = prod[pq_] - Ysl[pq_].sum(axis=1) + (vec_P[pq_] - vec_Q[pq_] * 1j) * X[0, pq_] + U[0, pq_] * \
+             vec_shunts[pq_, 0]
 valor[pv_] = prod[pv_] - Ysl[pv_].sum(axis=1) + (vec_P[pv_]) * X[0, pv_] + U[0, pv_] * vec_shunts[pv_, 0]
 
 
@@ -236,7 +237,9 @@ Q_fi = np.zeros(n, dtype=complex)
 P_fi = np.zeros(n, dtype=complex)
 I_dif = np.zeros(n, dtype=complex)
 S_dif = np.zeros(n, dtype=complex)
-
+Sig_re = np.zeros(n, dtype=complex)
+Sig_im = np.zeros(n, dtype=complex)
+U_pa = np.zeros(n, dtype=complex)
 
 U_fi[pqpv] = U_final
 U_fi[sl] = V_sl
@@ -253,23 +256,26 @@ I_dif[sl] = np.nan
 S_dif[pqpv] = np.conj(I_gen_in - I_gen_out) * U_final
 S_dif[sl] = np.nan
 
-df = pd.DataFrame(np.c_[np.abs(U_fi), np.angle(U_fi), np.real(P_fi), np.real(Q_fi), np.abs(I_dif),
-                        np.abs(S_dif)], columns=['|V|', 'Angle (rad)', 'P', 'Q', 'I error', 'S error'])
+from Padé import Padé_func # only for L==M
+from Sigma import Sigma_func  # only for L==M
+
+U_pade = [Padé_func(U[:, i], int((prof - 1) / 2)) for i in range(npqpv)]
+Sigma = [Sigma_func(U[:, i], int((prof - 1) / 2)) for i in range(npqpv)]
+
+U_pa[pqpv] = U_pade
+U_pa[sl] = np.nan
+
+Sig_re[pqpv] = np.real(Sigma)
+Sig_im[pqpv] = np.imag(Sigma)
+Sig_re[sl] = np.nan
+Sig_im[sl] = np.nan
+
+df = pd.DataFrame(np.c_[np.abs(U_fi), np.angle(U_fi), np.abs(U_pa), np.angle(U_pa), np.real(P_fi), np.real(Q_fi),
+                        np.abs(I_dif), np.abs(S_dif), np.real(Sig_re), np.real(Sig_im)], columns=['|V| sum',
+                        'Angle sum', '|V| Padé', 'Angle Padé', 'P', 'Q', 'I error', 'S error', 'Sigma re', 'Sigma im'])
 
 print(df)
 # test
-
-
-
-
-
-
-
-
-
-
-
-
 
 """
 V_test = np.array([0.95368602,

@@ -110,6 +110,7 @@
       <workItem from="1582111099567" duration="4616000" />
       <workItem from="1582143459078" duration="430000" />
       <workItem from="1582143978558" duration="153000" />
+      <workItem from="1582144295757" duration="1336000" />
     </task>
     <servers />
   </component>
@@ -140,7 +141,7 @@
     </option>
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/Holomorphic_Embedding_Josep$HEallv2.coverage" NAME="HEallv2 Coverage Results" MODIFIED="1582117053556" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/Holomorphic_Embedding_Josep$HEallv2.coverage" NAME="HEallv2 Coverage Results" MODIFIED="1582145624227" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Holomorphic_Embedding_Josep$HEallv2__1_.coverage" NAME="HEallv2 Coverage Results" MODIFIED="1581966109680" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>
