@@ -52,7 +52,8 @@ for i in range(n):  # store the data of both PQ and PV
     elif df_bus.iloc[i, 5] == 'Slack':
         V_sl.append(df_bus.iloc[i, 3]*(np.cos(df_bus.iloc[i, 4])+np.sin(df_bus.iloc[i, 4])*1j))
         sl.append(i)
-
+pq = np.array(pq)
+pv = np.array(pv)
 pqpv = np.sort(np.r_[pq, pv])
 pqpv_x = pqpv
 pq_x = pq
@@ -95,7 +96,7 @@ Ysl = Ysl1[pqpv, :]
 # --------------------------- INITIAL DATA: BUSES INFORMATION. DONE
 
 # --------------------------- PREPARING IMPLEMENTATION
-prof = 10  # depth
+prof = 100  # depth
 U = np.zeros((prof, npqpv), dtype=complex)  # voltages
 U_re = np.zeros((prof, npqpv), dtype=float)  # real part of voltages
 U_im = np.zeros((prof, npqpv), dtype=float)  # imaginary part of voltages
@@ -138,8 +139,8 @@ X_im[0, :] = X[0, :].imag
 
 # .......................CALCULATION OF TERMS [1]
 valor = np.zeros(npqpv, dtype=complex)
-pq = np.array(pq, dtype=int)
-pv = np.array(pv, dtype=int)
+# pq = np.array(pq, dtype=int)
+# pv = np.array(pv, dtype=int)
 
 prod = np.dot((Ysl[pqpv, :]), V_sl[:])
 
@@ -209,7 +210,7 @@ for c in range(2, prof):  # c defines the current depth
     U_im[c, :] = LHS[npqpv:2 * npqpv]
     Q[c - 1, pv] = LHS[2 * npqpv:]
 
-    U[c, :] = U_re[c, :] + U_im[c, :] * 1j
+    U[c, :] = U_re[c, :] + 1j * U_im[c, :]
     X[c, range_pqpv] = -conv(U, X, c, range_pqpv, 1) / np.conj(U[0, range_pqpv])
     X_re[c, :] = np.real(X[c, :])
     X_im[c, :] = np.imag(X[c, :])
@@ -237,8 +238,15 @@ P_fi = np.zeros(n, dtype=complex)
 I_dif = np.zeros(n, dtype=complex)
 S_dif = np.zeros(n, dtype=complex)
 
+
 U_fi[pqpv_x] = U_final
 U_fi[sl] = V_sl
+
+Sbus = np.nan_to_num(vec_Pi) + 1j * np.nan_to_num(vec_Qi)
+# S = U_fi * np.conj(Ybus * U_fi)
+# dS = S0[pqpv].real - S[pqpv].real
+dS = U_fi * np.conj(Ybus * U_fi) - Sbus  # complex power mismatch
+f_new = np.r_[dS[pqpv].real, dS[pq].imag]  # concatenate to form the mismatch function
 
 Q_fi[pqpv_x] = Qfinal
 Q_fi[sl] = np.nan
@@ -252,8 +260,8 @@ I_dif[sl] = np.nan
 S_dif[pqpv_x] = np.conj(I_gen_in - I_gen_out) * U_final
 S_dif[sl] = np.nan
 
-df = pd.DataFrame(np.c_[np.abs(U_fi), np.angle(U_fi) * 180 / np.pi, np.real(P_fi), np.real(Q_fi), np.abs(I_dif),
-                        np.abs(S_dif)], columns=['|V|', 'Angle (deg)', 'P', 'Q', 'I error', 'S error'])
+df = pd.DataFrame(np.c_[np.abs(U_fi), np.angle(U_fi), np.real(P_fi), np.real(Q_fi), np.abs(I_dif),
+                        np.abs(S_dif)], columns=['|V|', 'Angle (rad)', 'P', 'Q', 'I error', 'S error'])
 
 print(df)
 # test
