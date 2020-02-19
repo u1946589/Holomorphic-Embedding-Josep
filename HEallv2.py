@@ -5,8 +5,8 @@
 # --------------------------- LIBRARIES
 import numpy as np
 import pandas as pd
-from scipy.sparse import csc_matrix
-from scipy.sparse import lil_matrix, diags
+from scipy.sparse import csc_matrix, coo_matrix
+from scipy.sparse import lil_matrix, diags, hstack, vstack
 from scipy.sparse.linalg import spsolve, factorized
 np.set_printoptions(linewidth=2000)
 pd.set_option('display.max_rows', 500)
@@ -52,9 +52,10 @@ for i in range(n):  # store the data of both PQ and PV
     elif df_bus.iloc[i, 5] == 'Slack':
         V_sl.append(df_bus.iloc[i, 3]*(np.cos(df_bus.iloc[i, 4])+np.sin(df_bus.iloc[i, 4])*1j))
         sl.append(i)
-
+pq = np.array(pq)
+pv = np.array(pv)
 pqpv = np.sort(np.r_[pq, pv])
-pqpv_x = pqpv
+# pqpv_x = pqpv
 pq_x = pq
 pv_x = pv
 npq = len(pq)
@@ -95,7 +96,7 @@ Ysl = Ysl1[pqpv, :]
 # --------------------------- INITIAL DATA: BUSES INFORMATION. DONE
 
 # --------------------------- PREPARING IMPLEMENTATION
-prof = 10  # depth
+prof = 100  # depth
 U = np.zeros((prof, npqpv), dtype=complex)  # voltages
 U_re = np.zeros((prof, npqpv), dtype=float)  # real part of voltages
 U_im = np.zeros((prof, npqpv), dtype=float)  # imaginary part of voltages
@@ -109,7 +110,7 @@ Yred = Ybus[np.ix_(pqpv, pqpv)]  # admittance matrix without slack buses
 G = np.real(Yred)  # real parts of Yij
 B = np.imag(Yred)  # imaginary parts of Yij
 
-# indices 0 based
+# indices 0 based in the reduced scheme
 nsl_counted = np.zeros(n, dtype=int)
 compt = 0
 for i in range(n):
@@ -117,9 +118,9 @@ for i in range(n):
         compt += 1
     nsl_counted[i] = compt
 
-pq = pq - nsl_counted[pq]
-pv = pv - nsl_counted[pv]
-pqpv = np.sort(np.r_[pq, pv])
+pq_ = pq - nsl_counted[pq]
+pv_ = pv - nsl_counted[pv]
+pqpv_ = np.sort(np.r_[pq_, pv_])
 
 
 # .......................CALCULATION OF TERMS [0]
@@ -138,54 +139,38 @@ X_im[0, :] = X[0, :].imag
 
 # .......................CALCULATION OF TERMS [1]
 valor = np.zeros(npqpv, dtype=complex)
-pq = np.array(pq, dtype=int)
-pv = np.array(pv, dtype=int)
 
-prod = np.dot((Ysl[pqpv, :]), V_sl[:])
+prod = np.dot((Ysl[pqpv_, :]), V_sl[:])
 
-valor[pq] = prod[pq] - Ysl[pq].sum(axis=1) + (vec_P[pq] - vec_Q[pq] * 1j) * X[0, pq] + U[0, pq] * vec_shunts[pq, 0]
-valor[pv] = prod[pv] - Ysl[pv].sum(axis=1) + (vec_P[pv]) * X[0, pv] + U[0, pv] * vec_shunts[pv, 0]
+valor[pq_] = prod[pq_] - Ysl[pq_].sum(axis=1) + (vec_P[pq_] - vec_Q[pq_] * 1j) * X[0, pq_] + U[0, pq_] * vec_shunts[pq_, 0]
+valor[pv_] = prod[pv_] - Ysl[pv_].sum(axis=1) + (vec_P[pv_]) * X[0, pv_] + U[0, pv_] * vec_shunts[pv_, 0]
 
 
-RHS = np.zeros(2*npqpv + npv, dtype=float)
-RHS[pq] = valor[pq].real
-RHS[pv] = valor[pv].real
-RHS[npqpv + pq] = valor[pq].imag
-RHS[npqpv + pv] = valor[pv].imag
-RHS[2 * npqpv:] = vec_W[pv] - 1
+# compose the right-hand side vector
+RHS = np.r_[valor.real,
+            valor.imag,
+            vec_W[pv_] - 1.0]
 
+# Form the system matrix (MAT)
+VRE = coo_matrix((2 * U_re[0, pv_], (np.arange(npv), pv_)), shape=(npv, npqpv)).tocsc()
+VIM = coo_matrix((2 * U_im[0, pv_], (np.arange(npv), pv_)), shape=(npv, npqpv)).tocsc()
+XIM = coo_matrix((-X_im[0, pv_], (pv_, np.arange(npv))), shape=(npqpv, npv)).tocsc()
+XRE = coo_matrix((X_re[0, pv_], (pv_, np.arange(npv))), shape=(npqpv, npv)).tocsc()
+EMPTY = csc_matrix((npv, npv))
 
-MAT = lil_matrix((dimensions, dimensions), dtype=float)
-MAT[:npqpv, :npqpv] = G
-MAT[npqpv:2 * npqpv, :npqpv] = B
-MAT[:npqpv, npqpv:2 * npqpv] = -B
-MAT[npqpv:2 * npqpv, npqpv:2 * npqpv] = G
-
-MAT_URE = np.zeros((npqpv, npqpv), dtype=float)
-np.fill_diagonal(MAT_URE, 2 * U_re[0, :])
-MAT[2 * npqpv:, :npqpv] = np.delete(MAT_URE, list(pq), axis=0)
-
-MAT_UIM = np.zeros((npqpv, npqpv), dtype=float)
-np.fill_diagonal(MAT_UIM, 2 * U_im[0, :])
-MAT[2 * npqpv:, npqpv:2 * npqpv] = np.delete(MAT_UIM, list(pq), axis=0)
-
-MAT_XIM = np.zeros((npqpv, npqpv), dtype=float)
-np.fill_diagonal(MAT_XIM, -X_im[0, :])
-MAT[:npqpv, 2 * npqpv:] = np.delete(MAT_XIM, list(pq), axis=1)
-
-MAT_XRE = np.zeros((npqpv, npqpv), dtype=float)
-np.fill_diagonal(MAT_XRE, X_re[0, :])
-MAT[npqpv:2 * npqpv, 2 * npqpv:] = np.delete(MAT_XRE, list(pq), axis=1)
+MAT = vstack((hstack((G,   -B,   XIM)),
+              hstack((B,    G,   XRE)),
+              hstack((VRE,  VIM, EMPTY))), format='csc')
 
 # factorize (only once)
-MAT_csc = factorized(MAT.tocsc())
+MAT_LU = factorized(MAT.tocsc())
 
 # solve
-LHS = MAT_csc(RHS)
+LHS = MAT_LU(RHS)
 
 U_re[1, :] = LHS[:npqpv]
 U_im[1, :] = LHS[npqpv:2 * npqpv]
-Q[0, pv] = LHS[2 * npqpv:]
+Q[0, pv_] = LHS[2 * npqpv:]
 
 U[1, :] = U_re[1, :] + U_im[1, :] * 1j
 X[1, :] = (-X[0, :] * np.conj(U[1, :])) / np.conj(U[0, :])
@@ -207,25 +192,25 @@ def conv(A, B, c, i, tipus):
         return sum(suma)
 
 
+range_pqpv = np.arange(npqpv)  # range of pqpv buses for the X coefficient
+
 for c in range(2, prof):  # c defines the current depth
 
-    valor[pq] = (vec_P[pq] - vec_Q[pq] * 1j) * X[c - 1, pq] + U[c - 1, pq] * vec_shunts[pq, 0]
-    valor[pv] = conv(X, Q, c, pv, 2) * -1j + U[c - 1, pv] * vec_shunts[pv, 0] + X[c - 1, pv] * vec_P[pv]
+    valor[pq_] = (vec_P[pq_] - vec_Q[pq_] * 1j) * X[c - 1, pq_] + U[c - 1, pq_] * vec_shunts[pq_, 0]
+    valor[pv_] = conv(X, Q, c, pv_, 2) * -1j + U[c - 1, pv_] * vec_shunts[pv_, 0] + X[c - 1, pv_] * vec_P[pv_]
 
-    RHS[pq] = valor[pq].real
-    RHS[pv] = valor[pv].real
-    RHS[npqpv + pq] = valor[pq].imag
-    RHS[npqpv + pv] = valor[pv].imag
-    RHS[2 * npqpv:] = -conv(U, U, c, pv, 3).real  # the convolution of 2 complex is real :)
+    RHS = np.r_[valor.real,
+                valor.imag,
+                -conv(U, U, c, pv_, 3).real]
 
-    LHS = MAT_csc(RHS)
+    LHS = MAT_LU(RHS)
 
     U_re[c, :] = LHS[:npqpv]
     U_im[c, :] = LHS[npqpv:2 * npqpv]
-    Q[c - 1, pv] = LHS[2 * npqpv:]
+    Q[c - 1, pv_] = LHS[2 * npqpv:]
 
-    U[c, :] = U_re[c, :] + U_im[c, :] * 1j
-    X[c, range(npqpv)] = -conv(U, X, c, range(npqpv), 1) / np.conj(U[0, range(npqpv)])
+    U[c, :] = U_re[c, :] + 1j * U_im[c, :]
+    X[c, range_pqpv] = -conv(U, X, c, range_pqpv, 1) / np.conj(U[0, range_pqpv])
     X_re[c, :] = np.real(X[c, :])
     X_im[c, :] = np.imag(X[c, :])
 # .......................CALCULATION OF TERMS [>=2]. DONE
@@ -234,14 +219,14 @@ for c in range(2, prof):  # c defines the current depth
 U_final = np.zeros(npqpv, dtype=complex)  # final voltages
 U_final[0:npqpv] = U.sum(axis=0)
 I_serie = Yred * U_final  # current flowing through series elements
-I_inj_slack = np.dot((Ysl[pqpv, :]), V_sl[:])
+I_inj_slack = np.dot((Ysl[pqpv_, :]), V_sl[:])
 I_shunt = np.zeros(npqpv, dtype=complex)  # current through shunts
 I_shunt[:] = -U_final * vec_shunts[:, 0]  # change the sign again
 I_gen_out = I_serie - I_inj_slack + I_shunt  # current leaving the bus
 
 # assembly the reactive power vector
 Qfinal = vec_Q.copy()
-Qfinal[pv] = (Q[:, pv] * 1j).sum(axis=0).imag
+Qfinal[pv_] = (Q[:, pv_] * 1j).sum(axis=0).imag
 
 # compute the current injections
 I_gen_in = (vec_P - Qfinal * 1j) / np.conj(U_final)
@@ -252,23 +237,24 @@ P_fi = np.zeros(n, dtype=complex)
 I_dif = np.zeros(n, dtype=complex)
 S_dif = np.zeros(n, dtype=complex)
 
-U_fi[pqpv_x] = U_final
+
+U_fi[pqpv] = U_final
 U_fi[sl] = V_sl
 
-Q_fi[pqpv_x] = Qfinal
+Q_fi[pqpv] = Qfinal
 Q_fi[sl] = np.nan
 
-P_fi[pqpv_x] = vec_P
+P_fi[pqpv] = vec_P
 P_fi[sl] = np.nan
 
-I_dif[pqpv_x] = I_gen_in - I_gen_out
+I_dif[pqpv] = I_gen_in - I_gen_out
 I_dif[sl] = np.nan
 
-S_dif[pqpv_x] = np.conj(I_gen_in - I_gen_out) * U_final
+S_dif[pqpv] = np.conj(I_gen_in - I_gen_out) * U_final
 S_dif[sl] = np.nan
 
-df = pd.DataFrame(np.c_[np.abs(U_fi), np.angle(U_fi) * 180 / np.pi, np.real(P_fi), np.real(Q_fi), np.abs(I_dif),
-                        np.abs(S_dif)], columns=['|V|', 'Angle (deg)', 'P', 'Q', 'I error', 'S error'])
+df = pd.DataFrame(np.c_[np.abs(U_fi), np.angle(U_fi), np.real(P_fi), np.real(Q_fi), np.abs(I_dif),
+                        np.abs(S_dif)], columns=['|V|', 'Angle (rad)', 'P', 'Q', 'I error', 'S error'])
 
 print(df)
 # test
