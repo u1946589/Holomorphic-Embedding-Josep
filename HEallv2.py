@@ -55,6 +55,8 @@ for i in range(n):  # store the data of both PQ and PV
 
 pqpv = np.sort(np.r_[pq, pv])
 pqpv_x = pqpv
+pq_x = pq
+pv_x = pv
 npq = len(pq)
 npv = len(pv)
 npqpv = npq + npv
@@ -85,8 +87,7 @@ for i in range(nl):  # go through all rows
         Yslx[df_top.iloc[i, 0], df_top.iloc[i, 1]] = 1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) + \
                                                      Yslx[df_top.iloc[i, 0], df_top.iloc[i, 1]]
 
-print(n)
-print(Yslx[:, sl])
+
 Ysl1 = Yslx[:, sl]
 Ysl = Ysl1[pqpv, :]
 
@@ -116,13 +117,8 @@ for i in range(n):
         compt += 1
     nsl_counted[i] = compt
 
-for i in range(npq):
-    pq[i] = pq[i] - nsl_counted[i]
-print(pq)
-
-for i in range(npv):
-    pv[i] = pv[i] - nsl_counted[i]
-print(pv)
+pq = pq - nsl_counted[pq]
+pv = pv - nsl_counted[pv]
 pqpv = np.sort(np.r_[pq, pv])
 
 
@@ -137,7 +133,7 @@ U_re[0, :] = U[0, :].real
 U_im[0, :] = U[0, :].imag
 X_re[0, :] = X[0, :].real
 X_im[0, :] = X[0, :].imag
-print(U[0, :])
+
 # .......................CALCULATION OF TERMS [0]. DONE
 
 # .......................CALCULATION OF TERMS [1]
@@ -145,9 +141,7 @@ valor = np.zeros(npqpv, dtype=complex)
 pq = np.array(pq, dtype=int)
 pv = np.array(pv, dtype=int)
 
-print('Ysl bo: '+str(Ysl))
 prod = np.dot((Ysl[pqpv, :]), V_sl[:])
-print(prod)
 
 valor[pq] = prod[pq] - Ysl[pq].sum(axis=1) + (vec_P[pq] - vec_Q[pq] * 1j) * X[0, pq] + U[0, pq] * vec_shunts[pq, 0]
 valor[pv] = prod[pv] - Ysl[pv].sum(axis=1) + (vec_P[pv]) * X[0, pv] + U[0, pv] * vec_shunts[pv, 0]
@@ -272,7 +266,6 @@ I_dif[sl] = np.nan
 
 S_dif[pqpv_x] = np.conj(I_gen_in - I_gen_out) * U_final
 S_dif[sl] = np.nan
-
 
 df = pd.DataFrame(np.c_[np.abs(U_fi), np.angle(U_fi) * 180 / np.pi, np.real(P_fi), np.real(Q_fi), np.abs(I_dif),
                         np.abs(S_dif)], columns=['|V|', 'Angle (deg)', 'P', 'Q', 'I error', 'S error'])
