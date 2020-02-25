@@ -63,8 +63,9 @@ def pade4all(order, coeff_mat, s):
 def Sigma_funcO(coeff_matU, coeff_matX, order, V_slack):
     """
 
-    :param U: vector with voltage coefficients
-    :param order: order of the numerator, same for the denominator
+    :param coeff_matU: array with voltage coefficients
+    :param coeff_matX: array with inverse conjugated voltage coefficients
+    :param order: should be prof - 1
     :param V_slack: slack bus voltage vector. Must contain only 1 slack bus
     :return: sigma complex value
     """
