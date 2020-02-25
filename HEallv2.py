@@ -15,6 +15,7 @@ pd.set_option('display.max_columns', 500)
 pd.set_option('display.width', 1000)
 # --------------------------- END LIBRARIES
 
+
 @nb.njit("(c16[:])(i8, c16[:, :], i8)")
 def pade4all(order, coeff_mat, s):
     """
@@ -88,6 +89,7 @@ def Sigma_funcO(coeff_matU, coeff_matX, order, V0):
         lhs = np.linalg.solve(C, -a)
         sigmes[d] = np.sum(lhs[M:])/(np.sum(lhs[:M]) + 1)
     return sigmes
+
 
 def conv(A, B, c, i, tipus):
     if tipus == 1:
@@ -358,9 +360,15 @@ df = pd.DataFrame(np.c_[np.abs(U_fi), np.angle(U_fi), np.abs(U_pa), np.angle(U_p
 print(df)
 
 
+
 Ybus = Yseries - diags(vecx_shunts[:, 0])
+
 Scalc = U_fi * np.conj(Ybus * U_fi)
 S0 = np.real(P_fi) + 1j * np.real(Q_fi)
 diff = S0 - Scalc
 err = max(abs(np.r_[diff[pqpv].real, diff[pq].imag]))
+
 print('Power mismatch:', err)
+
+
+
