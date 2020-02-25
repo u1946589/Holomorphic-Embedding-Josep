@@ -93,7 +93,7 @@ def Sigma_funcO(coeff_matU, coeff_matX, order, V_slack):
         sigmes[d] = np.sum(lhs[M:])/(np.sum(lhs[:M]) + 1)
     return sigmes
 
-
+#@nb.njit("(c8)(c16[:, :], c16[:, :], i8, i8, i8)")
 def conv(A, B, c, i, tipus):
     if tipus == 1:
         suma = [np.conj(A[k, i]) * B[c - k, i] for k in range(1, c + 1)]
