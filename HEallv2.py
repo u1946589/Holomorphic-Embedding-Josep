@@ -4,15 +4,102 @@
 
 # --------------------------- LIBRARIES
 import numpy as np
+import numba as nb
 import pandas as pd
 from scipy.sparse import csc_matrix, coo_matrix
 from scipy.sparse import lil_matrix, diags, hstack, vstack
 from scipy.sparse.linalg import spsolve, factorized
-np.set_printoptions(linewidth=2000)
+np.set_printoptions(linewidth=2000, edgeitems=1000, suppress=True)
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 500)
 pd.set_option('display.width', 1000)
 # --------------------------- END LIBRARIES
+
+@nb.njit("(c16[:])(i8, c16[:, :], i8)")
+def pade4all(order, coeff_mat, s):
+    """
+    Computes the "order" Padè approximant of the coefficients at the approximation point s
+    Arguments:
+        coeff_mat: coefficient matrix (order, buses)
+        order:  order of the series
+        s: point of approximation
+    Returns:
+        Padè approximation at s for all the series
+    """
+    nbus = coeff_mat.shape[1]
+    complex_type = nb.complex128
+    voltages = np.zeros(nbus, dtype=complex_type)
+    nn = int(order / 2)
+    L = nn
+    M = nn
+    for d in range(nbus):
+        rhs = coeff_mat[L + 1:L + M + 1, d]
+        C = np.zeros((L, M), dtype=complex_type)
+        for i in range(L):
+            k = i + 1
+            C[i, :] = coeff_mat[L - M + k:L + k, d]
+        b = np.zeros(rhs.shape[0] + 1, dtype=complex_type)
+        x = np.linalg.solve(C, -rhs)  # bn to b1
+        b[0] = 1
+        b[1:] = x[::-1]
+        a = np.zeros(L + 1, dtype=complex_type)
+        a[0] = coeff_mat[0, d]
+        for i in range(L):
+            val = complex_type(0)
+            k = i + 1
+            for j in range(k + 1):
+                val += coeff_mat[k - j, d] * b[j]
+            a[i + 1] = val
+        p = complex_type(0)
+        q = complex_type(0)
+        for i in range(L + 1):
+            p += a[i] * s ** i
+            q += b[i] * s ** i
+        voltages[d] = p / q
+    return voltages
+
+@nb.njit("(c16[:])(c16[:, :], c16[:, :], i8, c8)")
+def Sigma_funcO(coeff_matU, coeff_matX, order, V0):
+    """
+
+    :param U: vector with voltage coefficients
+    :param order: order of the numerator, same for the denominator
+    :param V0: slack bus voltage. Not developed for more than 1 slack bus
+    :return: sigma complex value
+    """
+    coeff_matU = coeff_matU / V0
+    coeff_matX = coeff_matX / V0
+    nbus = coeff_matU.shape[1]
+    complex_type = nb.complex128
+    sigmes = np.zeros(nbus, dtype=complex_type)
+    if order % 2 == 0:
+        M = int(order / 2) - 1
+    else:
+        M = int(order / 2)
+    for d in range(nbus):
+        a = coeff_matU[1:2 * M + 2, d]
+        b = coeff_matX[0:2 * M + 1, d]
+        C = np.zeros((2 * M + 1, 2 * M + 1), dtype=complex_type)
+        for i in range(2 * M + 1):
+            if i < M:
+                C[1 + i:, i] = a[:2 * M - i]
+            else:
+                C[i - M:, i] = - b[:3 * M - i + 1]
+        lhs = np.linalg.solve(C, -a)
+        sigmes[d] = np.sum(lhs[M:])/(np.sum(lhs[:M]) + 1)
+    return sigmes
+
+def conv(A, B, c, i, tipus):
+    if tipus == 1:
+        suma = [np.conj(A[k, i]) * B[c - k, i] for k in range(1, c + 1)]
+        return sum(suma)
+    elif tipus == 2:
+        suma = [A[k, i] * B[c - 1 - k, i] for k in range(1, c)]
+        return sum(suma)
+    elif tipus == 3:
+        suma = [A[k, i] * np.conj(B[c - k, i]) for k in range(1, c)]
+        return sum(suma)
+
 
 # --------------------------- INITIAL DATA: Y, SHUNTS AND Y0i
 df_top = pd.read_excel('Data.xlsx', sheet_name='Topologia')  # DataFrame of the topology
@@ -26,9 +113,11 @@ L = np.zeros((nl, nl), dtype=complex)
 np.fill_diagonal(L, [1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) for i in range(nl)])
 A[df_top.iloc[range(nl), 0], range(nl)] = 1  # buses names must be > 0 and integers
 A[df_top.iloc[range(nl), 1], range(nl)] = -1
-Ybus = np.dot(np.dot(A, L), np.transpose(A))
-Ybus = csc_matrix(Ybus)
+Yseries = np.dot(np.dot(A, L), np.transpose(A))
+Yseries = csc_matrix(Yseries)
 
+print('Yseries')
+print(Yseries.toarray())
 
 vec_Pi = np.zeros(n, dtype=float)  # data of active power
 vec_Qi = np.zeros(n, dtype=float)  # data of reactive power
@@ -39,9 +128,9 @@ vec_Wi = np.zeros(n, dtype=float)  # voltage magnitude squared
 pq = []  # PQ buses indices
 pv = []  # PV buses indices
 sl = []  # Slack buses indices
-vec_Pi[:] = df_bus.iloc[:, 1]
-vec_Qi[:] = df_bus.iloc[:, 2]
-vec_Vi[:] = df_bus.iloc[:, 3]
+vec_Pi[:] = np.nan_to_num(df_bus.iloc[:, 1])
+vec_Qi[:] = np.nan_to_num(df_bus.iloc[:, 2])
+vec_Vi[:] = np.nan_to_num(df_bus.iloc[:, 3])
 V_sl = []
 
 for i in range(n):  # store the data of both PQ and PV
@@ -55,7 +144,6 @@ for i in range(n):  # store the data of both PQ and PV
 pq = np.array(pq)
 pv = np.array(pv)
 pqpv = np.sort(np.r_[pq, pv])
-# pqpv_x = pqpv
 pq_x = pq
 pv_x = pv
 npq = len(pq)
@@ -78,6 +166,10 @@ for i in range(nl):  # go through all rows
 vec_shunts = vecx_shunts[pqpv]
 
 
+df = pd.DataFrame(data=np.c_[vecx_shunts.imag, vec_Pi, vec_Qi, vec_Vi],
+                  columns=['Ysh', 'P0', 'Q0', 'V0'])
+print(df)
+
 Yslx = np.zeros((n, n), dtype=complex)  # vector with admittances connecting to the slack buses
 
 for i in range(nl):  # go through all rows
@@ -96,7 +188,7 @@ Ysl = Ysl1[pqpv, :]
 # --------------------------- INITIAL DATA: BUSES INFORMATION. DONE
 
 # --------------------------- PREPARING IMPLEMENTATION
-prof = 100  # depth
+prof = 10  # depth
 U = np.zeros((prof, npqpv), dtype=complex)  # voltages
 U_re = np.zeros((prof, npqpv), dtype=float)  # real part of voltages
 U_im = np.zeros((prof, npqpv), dtype=float)  # imaginary part of voltages
@@ -106,7 +198,7 @@ X_im = np.zeros((prof, npqpv), dtype=float)  # imaginary part of X
 Q = np.zeros((prof, npqpv), dtype=complex)  # unknown reactive powers
 vec_W = vec_V * vec_V
 dimensions = 2 * npq + 3 * npv  # number of unknowns
-Yred = Ybus[np.ix_(pqpv, pqpv)]  # admittance matrix without slack buses
+Yred = Yseries[np.ix_(pqpv, pqpv)]  # admittance matrix without slack buses
 G = np.real(Yred)  # real parts of Yij
 B = np.imag(Yred)  # imaginary parts of Yij
 
@@ -129,6 +221,7 @@ if nsl > 1:
     U[0, :] = spsolve(Yred, Ysl.sum(axis=1))
 else:
     U[0, :] = spsolve(Yred, Ysl)
+
 X[0, :] = 1 / np.conj(U[0, :])
 U_re[0, :] = U[0, :].real
 U_im[0, :] = U[0, :].imag
@@ -142,8 +235,7 @@ valor = np.zeros(npqpv, dtype=complex)
 
 prod = np.dot((Ysl[pqpv_, :]), V_sl[:])
 
-valor[pq_] = prod[pq_] - Ysl[pq_].sum(axis=1) + (vec_P[pq_] - vec_Q[pq_] * 1j) * X[0, pq_] + U[0, pq_] * \
-             vec_shunts[pq_, 0]
+valor[pq_] = prod[pq_] - Ysl[pq_].sum(axis=1) + (vec_P[pq_] - vec_Q[pq_] * 1j) * X[0, pq_] + U[0, pq_] * vec_shunts[pq_, 0]
 valor[pv_] = prod[pv_] - Ysl[pv_].sum(axis=1) + (vec_P[pv_]) * X[0, pv_] + U[0, pv_] * vec_shunts[pv_, 0]
 
 
@@ -163,6 +255,9 @@ MAT = vstack((hstack((G,   -B,   XIM)),
               hstack((B,    G,   XRE)),
               hstack((VRE,  VIM, EMPTY))), format='csc')
 
+print('MAT')
+print(MAT.toarray())
+
 # factorize (only once)
 MAT_LU = factorized(MAT.tocsc())
 
@@ -179,19 +274,6 @@ X_re[1, :] = X[1, :].real
 X_im[1, :] = X[1, :].imag
 
 # .......................CALCULATION OF TERMS [1]. DONE
-
-
-def conv(A, B, c, i, tipus):
-    if tipus == 1:
-        suma = [np.conj(A[k, i]) * B[c - k, i] for k in range(1, c + 1)]
-        return sum(suma)
-    elif tipus == 2:
-        suma = [A[k, i] * B[c - 1 - k, i] for k in range(1, c)]
-        return sum(suma)
-    elif tipus == 3:
-        suma = [A[k, i] * np.conj(B[c - k, i]) for k in range(1, c)]
-        return sum(suma)
-
 
 range_pqpv = np.arange(npqpv)  # range of pqpv buses for the X coefficient
 
@@ -216,6 +298,8 @@ for c in range(2, prof):  # c defines the current depth
     X_im[c, :] = np.imag(X[c, :])
 # .......................CALCULATION OF TERMS [>=2]. DONE
 
+print('V coefficients')
+print(U)
 # --------------------------- CHECK DATA
 U_final = np.zeros(npqpv, dtype=complex)  # final voltages
 U_final[0:npqpv] = U.sum(axis=0)
@@ -256,11 +340,8 @@ I_dif[sl] = np.nan
 S_dif[pqpv] = np.conj(I_gen_in - I_gen_out) * U_final
 S_dif[sl] = np.nan
 
-from Padé import Padé_func # only for L==M
-from Sigma import Sigma_func  # only for L==M
-
-U_pade = [Padé_func(U[:, i], int((prof - 1) / 2)) for i in range(npqpv)]
-Sigma = [Sigma_func(U[:, i], int((prof - 1) / 2)) for i in range(npqpv)]
+U_pade = pade4all(prof - 1, U, 1)
+Sigma = Sigma_funcO(U, X, prof - 1, V_sl[0])
 
 U_pa[pqpv] = U_pade
 U_pa[sl] = np.nan
@@ -275,23 +356,11 @@ df = pd.DataFrame(np.c_[np.abs(U_fi), np.angle(U_fi), np.abs(U_pa), np.angle(U_p
                         'Angle sum', '|V| Padé', 'Angle Padé', 'P', 'Q', 'I error', 'S error', 'Sigma re', 'Sigma im'])
 
 print(df)
-# test
 
-"""
-V_test = np.array([0.95368602,
-                   0.94166879,
-                   0.93910714,
-                   0.95,
-                   0.94,
-                   0.92973537,
-                   0.93579263,
-                   0.91,
-                   0.94618528,
-                   0.98,
-                   0.92])
 
-ok = np.isclose(abs(U_final), V_test, atol=1e-3).all()
-
-if not ok:
-    print('Test failed')
-"""
+Ybus = Yseries - diags(vecx_shunts[:, 0])
+Scalc = U_fi * np.conj(Ybus * U_fi)
+S0 = np.real(P_fi) + 1j * np.real(Q_fi)
+diff = S0 - Scalc
+err = max(abs(np.r_[diff[pqpv].real, diff[pq].imag]))
+print('Power mismatch:', err)

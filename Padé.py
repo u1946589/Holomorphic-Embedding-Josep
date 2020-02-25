@@ -1,6 +1,7 @@
 import numpy as np
+from numba import jit
 
-
+#@jit(nopython=True)
 def Padé_func(U, L):  # only for diagonal approximants
     """
 

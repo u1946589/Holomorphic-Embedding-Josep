@@ -1,6 +1,7 @@
 import numpy as np
+from numba import jit
 
-
+#@jit(nopython=True)
 def Sigma_func(U, L):
     """
 
