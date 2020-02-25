@@ -59,15 +59,18 @@ def pade4all(order, coeff_mat, s):
         voltages[d] = p / q
     return voltages
 
-@nb.njit("(c16[:])(c16[:, :], c16[:, :], i8, c8)")
-def Sigma_funcO(coeff_matU, coeff_matX, order, V0):
+@nb.njit("(c16[:])(c16[:, :], c16[:, :], i8, c16[:])")
+def Sigma_funcO(coeff_matU, coeff_matX, order, V_slack):
     """
 
     :param U: vector with voltage coefficients
     :param order: order of the numerator, same for the denominator
-    :param V0: slack bus voltage. Not developed for more than 1 slack bus
+    :param V_slack: slack bus voltage vector. Must contain only 1 slack bus
     :return: sigma complex value
     """
+    if len(V_slack) > 1:
+        print('Sigma values may not be correct')
+    V0 = V_slack[0]
     coeff_matU = coeff_matU / V0
     coeff_matX = coeff_matX / V0
     nbus = coeff_matU.shape[1]
@@ -145,11 +148,17 @@ for i in range(n):  # store the data of both PQ and PV
         sl.append(i)
 pq = np.array(pq)
 pv = np.array(pv)
-pqpv = np.sort(np.r_[pq, pv])
-pq_x = pq
-pv_x = pv
 npq = len(pq)
 npv = len(pv)
+if npv > 0 and npq > 0:
+    pqpv = np.sort(np.r_[pq, pv])
+elif npq > 0:
+    pqpv = np.sort(pq)
+elif npv > 0:
+    pqpv = np.sort(pv)
+pq_x = pq
+pv_x = pv
+
 npqpv = npq + npv
 nsl = n - npqpv
 
@@ -190,7 +199,7 @@ Ysl = Ysl1[pqpv, :]
 # --------------------------- INITIAL DATA: BUSES INFORMATION. DONE
 
 # --------------------------- PREPARING IMPLEMENTATION
-prof = 10  # depth
+prof = 30  # depth
 U = np.zeros((prof, npqpv), dtype=complex)  # voltages
 U_re = np.zeros((prof, npqpv), dtype=float)  # real part of voltages
 U_im = np.zeros((prof, npqpv), dtype=float)  # imaginary part of voltages
@@ -212,10 +221,16 @@ for i in range(n):
         compt += 1
     nsl_counted[i] = compt
 
-pq_ = pq - nsl_counted[pq]
-pv_ = pv - nsl_counted[pv]
-pqpv_ = np.sort(np.r_[pq_, pv_])
-
+if npv > 0 and npq > 0:
+    pq_ = pq - nsl_counted[pq]
+    pv_ = pv - nsl_counted[pv]
+    pqpv_ = np.sort(np.r_[pq_, pv_])
+elif npq > 0:
+    pq_ = pq - nsl_counted[pq]
+    pqpv_ = np.sort(pq_)
+elif npv > 0:
+    pv_ = pv - nsl_counted[pv]
+    pqpv_ = np.sort(pv_)
 
 # .......................CALCULATION OF TERMS [0]
 
@@ -237,25 +252,31 @@ valor = np.zeros(npqpv, dtype=complex)
 
 prod = np.dot((Ysl[pqpv_, :]), V_sl[:])
 
-valor[pq_] = prod[pq_] - Ysl[pq_].sum(axis=1) + (vec_P[pq_] - vec_Q[pq_] * 1j) * X[0, pq_] + U[0, pq_] * vec_shunts[pq_, 0]
-valor[pv_] = prod[pv_] - Ysl[pv_].sum(axis=1) + (vec_P[pv_]) * X[0, pv_] + U[0, pv_] * vec_shunts[pv_, 0]
+if npq > 0:
+    valor[pq_] = prod[pq_] - Ysl[pq_].sum(axis=1) + (vec_P[pq_] - vec_Q[pq_] * 1j) * X[0, pq_] + U[0, pq_] * vec_shunts[pq_, 0]
+if npv > 0:
+    valor[pv_] = prod[pv_] - Ysl[pv_].sum(axis=1) + (vec_P[pv_]) * X[0, pv_] + U[0, pv_] * vec_shunts[pv_, 0]
+    # compose the right-hand side vector
+    RHS = np.r_[valor.real,
+                valor.imag,
+                vec_W[pv_] - 1.0]
+    # Form the system matrix (MAT)
+    VRE = coo_matrix((2 * U_re[0, pv_], (np.arange(npv), pv_)), shape=(npv, npqpv)).tocsc()
+    VIM = coo_matrix((2 * U_im[0, pv_], (np.arange(npv), pv_)), shape=(npv, npqpv)).tocsc()
+    XIM = coo_matrix((-X_im[0, pv_], (pv_, np.arange(npv))), shape=(npqpv, npv)).tocsc()
+    XRE = coo_matrix((X_re[0, pv_], (pv_, np.arange(npv))), shape=(npqpv, npv)).tocsc()
+    EMPTY = csc_matrix((npv, npv))
 
+    MAT = vstack((hstack((G,   -B,   XIM)),
+                  hstack((B,    G,   XRE)),
+                  hstack((VRE,  VIM, EMPTY))), format='csc')
 
-# compose the right-hand side vector
-RHS = np.r_[valor.real,
-            valor.imag,
-            vec_W[pv_] - 1.0]
-
-# Form the system matrix (MAT)
-VRE = coo_matrix((2 * U_re[0, pv_], (np.arange(npv), pv_)), shape=(npv, npqpv)).tocsc()
-VIM = coo_matrix((2 * U_im[0, pv_], (np.arange(npv), pv_)), shape=(npv, npqpv)).tocsc()
-XIM = coo_matrix((-X_im[0, pv_], (pv_, np.arange(npv))), shape=(npqpv, npv)).tocsc()
-XRE = coo_matrix((X_re[0, pv_], (pv_, np.arange(npv))), shape=(npqpv, npv)).tocsc()
-EMPTY = csc_matrix((npv, npv))
-
-MAT = vstack((hstack((G,   -B,   XIM)),
-              hstack((B,    G,   XRE)),
-              hstack((VRE,  VIM, EMPTY))), format='csc')
+else:
+    # compose the right-hand side vector
+    RHS = np.r_[valor.real,
+                valor.imag]
+    MAT = vstack((hstack((G, -B)),
+                  hstack((B, G))), format='csc')
 
 print('MAT')
 print(MAT.toarray())
@@ -268,7 +289,8 @@ LHS = MAT_LU(RHS)
 
 U_re[1, :] = LHS[:npqpv]
 U_im[1, :] = LHS[npqpv:2 * npqpv]
-Q[0, pv_] = LHS[2 * npqpv:]
+if npv > 0:
+    Q[0, pv_] = LHS[2 * npqpv:]
 
 U[1, :] = U_re[1, :] + U_im[1, :] * 1j
 X[1, :] = (-X[0, :] * np.conj(U[1, :])) / np.conj(U[0, :])
@@ -280,19 +302,23 @@ X_im[1, :] = X[1, :].imag
 range_pqpv = np.arange(npqpv)  # range of pqpv buses for the X coefficient
 
 for c in range(2, prof):  # c defines the current depth
-
-    valor[pq_] = (vec_P[pq_] - vec_Q[pq_] * 1j) * X[c - 1, pq_] + U[c - 1, pq_] * vec_shunts[pq_, 0]
-    valor[pv_] = conv(X, Q, c, pv_, 2) * -1j + U[c - 1, pv_] * vec_shunts[pv_, 0] + X[c - 1, pv_] * vec_P[pv_]
-
-    RHS = np.r_[valor.real,
-                valor.imag,
-                -conv(U, U, c, pv_, 3).real]
+    if npq > 0:
+        valor[pq_] = (vec_P[pq_] - vec_Q[pq_] * 1j) * X[c - 1, pq_] + U[c - 1, pq_] * vec_shunts[pq_, 0]
+    if npv > 0:
+        valor[pv_] = conv(X, Q, c, pv_, 2) * -1j + U[c - 1, pv_] * vec_shunts[pv_, 0] + X[c - 1, pv_] * vec_P[pv_]
+        RHS = np.r_[valor.real,
+                    valor.imag,
+                    -conv(U, U, c, pv_, 3).real]
+    else:
+        RHS = np.r_[valor.real,
+                    valor.imag]
 
     LHS = MAT_LU(RHS)
 
     U_re[c, :] = LHS[:npqpv]
     U_im[c, :] = LHS[npqpv:2 * npqpv]
-    Q[c - 1, pv_] = LHS[2 * npqpv:]
+    if npv > 0:
+        Q[c - 1, pv_] = LHS[2 * npqpv:]
 
     U[c, :] = U_re[c, :] + 1j * U_im[c, :]
     X[c, range_pqpv] = -conv(U, X, c, range_pqpv, 1) / np.conj(U[0, range_pqpv])
@@ -313,7 +339,8 @@ I_gen_out = I_serie - I_inj_slack + I_shunt  # current leaving the bus
 
 # assembly the reactive power vector
 Qfinal = vec_Q.copy()
-Qfinal[pv_] = (Q[:, pv_] * 1j).sum(axis=0).imag
+if npv > 0:
+    Qfinal[pv_] = (Q[:, pv_] * 1j).sum(axis=0).imag
 
 # compute the current injections
 I_gen_in = (vec_P - Qfinal * 1j) / np.conj(U_final)
@@ -326,6 +353,7 @@ S_dif = np.zeros(n, dtype=complex)
 Sig_re = np.zeros(n, dtype=complex)
 Sig_im = np.zeros(n, dtype=complex)
 U_pa = np.zeros(n, dtype=complex)
+U_sig = np.zeros(n, dtype=complex)
 
 U_fi[pqpv] = U_final
 U_fi[sl] = V_sl
@@ -343,7 +371,8 @@ S_dif[pqpv] = np.conj(I_gen_in - I_gen_out) * U_final
 S_dif[sl] = np.nan
 
 U_pade = pade4all(prof - 1, U, 1)
-Sigma = Sigma_funcO(U, X, prof - 1, V_sl[0])
+V_slx = np.array(V_sl)
+Sigma = Sigma_funcO(U, X, prof - 1, V_slx)
 
 U_pa[pqpv] = U_pade
 U_pa[sl] = np.nan
@@ -353,20 +382,24 @@ Sig_im[pqpv] = np.imag(Sigma)
 Sig_re[sl] = np.nan
 Sig_im[sl] = np.nan
 
-df = pd.DataFrame(np.c_[np.abs(U_fi), np.angle(U_fi), np.abs(U_pa), np.angle(U_pa), np.real(P_fi), np.real(Q_fi),
-                        np.abs(I_dif), np.abs(S_dif), np.real(Sig_re), np.real(Sig_im)], columns=['|V| sum',
-                        'Angle sum', '|V| Padé', 'Angle Padé', 'P', 'Q', 'I error', 'S error', 'Sigma re', 'Sigma im'])
+U_sig[:] = (np.sqrt(0.25+Sig_re-Sig_im**2) + 0.5) + Sig_im * 1j
+
+df = pd.DataFrame(np.c_[np.abs(U_fi), np.angle(U_fi), np.abs(U_pa), np.angle(U_pa), np.abs(U_sig), np.angle(U_sig),
+                        np.real(P_fi), np.real(Q_fi), np.abs(I_dif), np.abs(S_dif), np.real(Sig_re), np.real(Sig_im)],
+                        columns=['|V| sum', 'Angle sum', '|V| Padé', 'Angle Padé', '|V| Sigma', 'Angle Sigma', 'P', 'Q',
+                                 'I error', 'S error', 'Sigma re', 'Sigma im'])
 
 print(df)
-
-
 
 Ybus = Yseries - diags(vecx_shunts[:, 0])
 
 Scalc = U_fi * np.conj(Ybus * U_fi)
 S0 = np.real(P_fi) + 1j * np.real(Q_fi)
 diff = S0 - Scalc
-err = max(abs(np.r_[diff[pqpv].real, diff[pq].imag]))
+if npq > 0:
+    err = max(abs(np.r_[diff[pqpv].real, diff[pq].imag]))
+else:
+    err = max(abs(np.r_[diff[pqpv].real]))
 
 print('Power mismatch:', err)
 
