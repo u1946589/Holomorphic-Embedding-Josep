@@ -10,6 +10,7 @@ import pandas as pd
 from scipy.sparse import csc_matrix, coo_matrix
 from scipy.sparse import lil_matrix, diags, hstack, vstack
 from scipy.sparse.linalg import spsolve, factorized
+from numpy import zeros, ones, mod, conj, array, r_, linalg, Inf, complex128, c_, r_, angle
 np.set_printoptions(linewidth=2000, edgeitems=1000, suppress=True)
 pd.set_option('display.max_rows', 5000)
 pd.set_option('display.max_columns', 1000)
@@ -197,6 +198,81 @@ def thevenin_funcX2(U, X, i):
 
     return ufinal
 
+def rho(U):  # veure si cal tallar U, o sigui, agafar per exemple els 10 primers coeficients
+    def S(U, k):
+        suma = 0
+        for m in range(k+1):
+            suma = suma + U[m]
+        return suma
+    U = U[:20]  # no agafar tots els coeficients, si no, salta error
+    n = len(U)
+    mat = np.zeros((n, n+1), dtype=complex)
+    #mat[:, 0] = 0  # plena de 0, tot i que ja ho està
+    for i in range(n):
+        mat[i, 1] = S(U, i)  # plena de sumes parcials
+    for j in range(2, n+1):
+        for i in range(0, n+1-j):
+            mat[i, j] = mat[i+1, j-2] + (j - 1) / (mat[i+1,j-1] - mat[i, j-1])
+    #print(mat)
+    return mat[0, n-1]  # provar si és aquest número, o si depèn de parell o imparell...
+
+def aitken(U):
+    def S(U, k):
+        suma = 0
+        for m in range(k+1):
+            suma = suma + U[m]
+        return suma
+    U = U[:10]  # només els 10 primers coeficients, si no, divideix per 0 i es deteriora
+    n = len(U)
+    T = np.zeros(n-2, dtype = complex)
+    for i in range(len(T)):
+        T[i] = S(U, i) - (S(U, i+1)**2 + S(U, i)**2 - 2*S(U, i+1)*S(U, i)) / (S(U, i+2) - 2*S(U, i+1) + S(U, i))
+    return T[-1]  # l'últim element, entenent que és el que millor aproxima
+
+
+def epsilon(Sn, n, E):
+    """
+    Fast recursive Wynn's epsilon algorithm from:
+        NONLINEAR SEQUENCE TRANSFORMATIONS FOR THE ACCELERATION OF CONVERGENCE
+        AND THE SUMMATION OF DIVERGENT SERIES
+        by Ernst Joachim Weniger
+    Args:
+        Sn: sum of coefficients
+        n: order
+        E: Coefficients structure copy that is modified in this algorithm
+    Returns:
+    """
+    complex_type = complex128
+    Zero = complex_type(0)
+    One = complex_type(1)
+    Tiny = np.finfo(complex_type).min
+    Huge = np.finfo(complex_type).max
+
+    E[n] = Sn
+
+    if n == 0:
+        estim = Sn
+    else:
+        AUX2 = Zero
+
+        for j in range(n, 0, -1):  # range from n to 1 (both included)
+            AUX1 = AUX2
+            AUX2 = E[j-1]
+            DIFF = E[j] - AUX2
+
+            if abs(DIFF) <= Tiny:
+                E[j-1] = Huge
+            else:
+                if DIFF == 0:
+                    DIFF = Tiny
+                E[j-1] = AUX1 + One / DIFF
+
+        estim = E[n]
+
+    return estim
+
+
+
 #@nb.njit("(c8)(c16[:, :], c16[:, :], i8, i8, i8)")
 def conv(A, B, c, i, tipus):
     if tipus == 1:
@@ -324,7 +400,7 @@ Ysl = Ysl1[pqpv, :]
 # --------------------------- INITIAL DATA: BUSES INFORMATION. DONE
 
 # --------------------------- PREPARING IMPLEMENTATION
-prof = 20  # depth
+prof = 30  # depth
 U = np.zeros((prof, npqpv), dtype=complex)  # voltages
 U_re = np.zeros((prof, npqpv), dtype=float)  # real part of voltages
 U_im = np.zeros((prof, npqpv), dtype=float)  # imaginary part of voltages
@@ -456,6 +532,8 @@ for c in range(2, prof):  # c defines the current depth
 
 print('V coefficients')
 print(U)
+Ux = np.zeros((prof, npqpv), dtype=complex)  # voltages
+Ux[:,:] = U[:,:]
 # --------------------------- CHECK DATA
 U_final = np.zeros(npqpv, dtype=complex)  # final voltages
 U_final[0:npqpv] = U.sum(axis=0)
@@ -483,6 +561,9 @@ Sig_im = np.zeros(n, dtype=complex)
 U_pa = np.zeros(n, dtype=complex)
 U_sig = np.zeros(n, dtype=complex)
 U_th = np.zeros(n, dtype=complex)
+U_ait = np.zeros(n, dtype=complex)
+U_eps = np.zeros(n, dtype=complex)
+U_rho = np.zeros(n, dtype=complex)
 
 U_fi[pqpv] = U_final
 U_fi[sl] = V_sl
@@ -512,16 +593,14 @@ Sig_re[sl] = np.nan
 Sig_im[sl] = np.nan
 
 
-# CÀLCUL DE VOLTATGES AMB SIGMA AMB LA MODIFICACIÓ... TAMPOC S'HI GUANYA GAIRE SEMBLA
+# CÀLCUL DE VOLTATGES EXACTE AMB SIGMA AMB LA MODIFICACIÓ... INTUEIXO QUE NO S'HI GUANYA GAIRE
 E = np.zeros(n, dtype=complex)
 E[sl] = np.nan
 E[pqpv] = U[0, :] / V_sl[0]
-print(E)
-# FI CÀLCUL V AMB SIGMES
+#print(E)
+# FI CÀLCUL V AMB SIGMES EXACTES
 
 U_sig[:] = (np.sqrt(0.25+Sig_re-Sig_im**2) + 0.5) + Sig_im * 1j
-
-
 
 for i in range(npqpv):
     U_th[i] = thevenin_funcX2(U[:, i], X[:, i], 1)
@@ -530,11 +609,40 @@ U_th[pqpv] = U_th[pqpv_]
 U_th[sl] = np.nan
 #print(U_th)
 
+#AITKEN. FUNCIONA
+for i in range(npqpv):
+    U_ait[i] = aitken(U[:, i])
+
+U_ait[pqpv] = U_ait[pqpv_]
+U_ait[sl] = np.nan
+#FI AITKEN
+
+Ux2 = np.zeros((prof, npqpv), dtype=complex)  # cal tornar a agafar els valors perquè a alguna funció tallo la sèrie
+Ux2[:,:] = Ux[:,:]
+
+#EPSILON ACCELERADES
+for i in range(npqpv):
+    U_eps[i] = epsilon(sum(Ux[:, i]), 10, Ux[:, i])  # no agafar tots els coeficients, salta error
+U_eps[pqpv] = U_eps[pqpv_]  # treballo amb Ux perquè U sembla canviar a algun moment
+U_eps[sl] = np.nan
+#FI EPSILON ACCELERADES
+
+#RHO
+for i in range(npqpv):
+    U_rho[i] = rho(U[:, i])
+U_rho[pqpv] = U_rho[pqpv_]
+U_rho[sl] = np.nan
+#print(U_rho)
+#FI RHO
+
+
 df = pd.DataFrame(np.c_[np.abs(U_fi), np.angle(U_fi), np.abs(U_pa), np.angle(U_pa), np.abs(U_sig), np.angle(U_sig),
-                        np.abs(U_th), np.real(P_fi), np.real(Q_fi), np.abs(I_dif), np.abs(S_dif), np.real(Sig_re),
+                        np.abs(U_th), np.abs(U_eps), np.angle(U_eps), np.abs(U_ait), np.angle(U_ait), np.abs(U_rho),
+                        np.angle(U_rho), np.real(P_fi), np.real(Q_fi), np.abs(I_dif), np.abs(S_dif), np.real(Sig_re),
                         np.real(Sig_im)],
                         columns=['|V| sum', 'Angle sum', '|V| Padé', 'Angle Padé', '|V| Sigma', 'Angle Sigma',
-                                 '|V| Thévenin', 'P', 'Q', 'I error', 'S error', 'Sigma re', 'Sigma im'])
+                                 '|V| Thévenin', '|V| Epsilon', 'Angle Epsilon', '|V| Aitken', 'Angle Aitken',
+                                 '|V| Rho', 'Angle Rho', 'P', 'Q', 'I error', 'S error', 'Sigma re', 'Sigma im'])
 
 print(df)
 
@@ -551,6 +659,6 @@ else:
 print('Power mismatch:', err)
 
 Ybus= Ybus.todense()
-print(Ybus)
+#print(Ybus)
 
 Zbus = np.linalg.inv(Ybus)
