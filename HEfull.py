@@ -216,6 +216,31 @@ def rho(U):  # veure si cal tallar U, o sigui, agafar per exemple els 10 primers
     #print(mat)
     return mat[0, n-1]  # provar si és aquest número, o si depèn de parell o imparell...
 
+def theta(U_inicial):
+    def S(U, k):
+        suma = 0
+        for m in range(k+1):
+            suma = suma + U[m]
+        return suma
+
+    n = len(U_inicial)
+    U = np.zeros(n, dtype=complex)
+    U[:] = U_inicial[:]
+    mat = np.zeros((n, n+1), dtype=complex)
+    for i in range(n):
+        mat[i, 1] = S(U, i)  # plena de sumes parcials
+
+    for j in range(2, n+1):
+        if j % 2 == 0:
+            for i in range(0, n+1-j):
+                mat[i, j] = mat[i+1, j-2] + 1 / (mat[i+1, j-1] - mat[i, j-1])
+        else:
+            for i in range(0, n + 1 - j):
+                mat[i, j] = mat[i+1, j-2] + ((mat[i+2, j-2] - mat[i+1, j-2]) * (mat[i+2, j-1] - mat[i+1, j-1])) \
+                            / (mat[i+2, j-1] - 2 * mat[i+1, j-1] + mat[i, j-1])
+
+    return mat[0, n-1]  # mirar si n està bé
+
 def aitken(U):
     def S(U, k):
         suma = 0
@@ -229,6 +254,22 @@ def aitken(U):
         T[i] = S(U, i) - (S(U, i+1)**2 + S(U, i)**2 - 2*S(U, i+1)*S(U, i)) / (S(U, i+2) - 2*S(U, i+1) + S(U, i))
     return T[-1]  # l'últim element, entenent que és el que millor aproxima
 
+def eta(U_inicial):
+    n = len(U_inicial)
+    U = np.zeros(n, dtype=complex)
+    U[:] = U_inicial[:]
+    mat = np.zeros((n, n+1), dtype=complex)
+    mat[:, 0] = np.inf  # infinit
+    mat[:, 1] = U[:]
+
+    for j in range(2, n + 1):
+        if j % 2 == 0:
+            for i in range(0, n + 1 - j):
+                mat[i, j] = 1 / (1 / mat[i+1, j-2] + 1 / (mat[i+1, j-1]) - 1 / (mat[i, j-1]))
+        else:
+            for i in range(0, n + 1 - j):
+                mat[i, j] = mat[i+1, j-2] + mat[i+1, j-1] - mat[i, j-1]
+    return sum(mat[0, 1:])
 
 def epsilon(Sn, n, E):
     """
@@ -564,6 +605,8 @@ U_th = np.zeros(n, dtype=complex)
 U_ait = np.zeros(n, dtype=complex)
 U_eps = np.zeros(n, dtype=complex)
 U_rho = np.zeros(n, dtype=complex)
+U_theta = np.zeros(n, dtype=complex)
+U_eta = np.zeros(n, dtype=complex)
 
 U_fi[pqpv] = U_final
 U_fi[sl] = V_sl
@@ -635,14 +678,43 @@ U_rho[sl] = np.nan
 #print(U_rho)
 #FI RHO
 
+#THETA
+for i in range(npqpv):
+    U_theta[i] = theta(Ux2[:10, i])  # per no passar-li tots els coeficients, saltaria error per dividir / 0
+U_theta[pqpv] = U_theta[pqpv_]
+U_theta[sl] = np.nan
+#print(U_theta)
+#FI THETA
 
+#ETA
+for i in range(npqpv):
+    U_eta[i] = eta(Ux2[:20, i])  # per no passar-li tots els coeficients, saltaria error per dividir / 0
+U_eta[pqpv] = U_eta[pqpv_]
+U_eta[sl] = np.nan
+#print(abs(U_eta))
+#FI ETA
+
+"""  # HO COMENTO PERQUÈ NO CAP TOT EN UNA LÍNIA
 df = pd.DataFrame(np.c_[np.abs(U_fi), np.angle(U_fi), np.abs(U_pa), np.angle(U_pa), np.abs(U_sig), np.angle(U_sig),
                         np.abs(U_th), np.abs(U_eps), np.angle(U_eps), np.abs(U_ait), np.angle(U_ait), np.abs(U_rho),
-                        np.angle(U_rho), np.real(P_fi), np.real(Q_fi), np.abs(I_dif), np.abs(S_dif), np.real(Sig_re),
-                        np.real(Sig_im)],
+                        np.angle(U_rho), np.abs(U_theta), np.angle(U_theta), np.abs(U_eta), np.angle(U_eta),
+                        np.real(P_fi), np.real(Q_fi), np.abs(I_dif), np.abs(S_dif), np.real(Sig_re), np.real(Sig_im)],
                         columns=['|V| sum', 'Angle sum', '|V| Padé', 'Angle Padé', '|V| Sigma', 'Angle Sigma',
                                  '|V| Thévenin', '|V| Epsilon', 'Angle Epsilon', '|V| Aitken', 'Angle Aitken',
-                                 '|V| Rho', 'Angle Rho', 'P', 'Q', 'I error', 'S error', 'Sigma re', 'Sigma im'])
+                                 '|V| Rho', 'Angle Rho', '|V| Theta', 'Angle Theta', '|V| Eta', 'Angle Eta' , 'P', 'Q',
+                                 'I error', 'S error', 'Sigma re', 'Sigma im'])
+"""
+#IGUAL PERÒ SENSE ERRORS D'INTENSITAT
+df = pd.DataFrame(np.c_[np.abs(U_fi), np.angle(U_fi), np.abs(U_pa), np.angle(U_pa), np.abs(U_sig), np.angle(U_sig),
+                        np.abs(U_th), np.abs(U_eps), np.angle(U_eps), np.abs(U_ait), np.angle(U_ait), np.abs(U_rho),
+                        np.angle(U_rho), np.abs(U_theta), np.angle(U_theta), np.abs(U_eta), np.angle(U_eta),
+                        np.real(P_fi), np.real(Q_fi), np.abs(S_dif), np.real(Sig_re), np.real(Sig_im)],
+                        columns=['|V| sum', 'Angle sum', '|V| Padé', 'Angle Padé', '|V| Sigma', 'Angle Sigma',
+                                 '|V| Thévenin', '|V| Epsilon', 'Angle Epsilon', '|V| Aitken', 'Angle Aitken',
+                                 '|V| Rho', 'Angle Rho', '|V| Theta', 'Angle Theta', '|V| Eta', 'Angle Eta', 'P', 'Q',
+                                 'S error', 'Sigma re', 'Sigma im'])
+
+
 
 print(df)
 
