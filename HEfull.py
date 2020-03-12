@@ -62,8 +62,7 @@ def pade4all(order, coeff_mat, s):
         voltages[d] = p / q
     return voltages
 
-#@nb.njit("(c16[:])(c16[:, :], c16[:, :], i8, c16[:])")
-def Sigma_funcO(coeff_matU, coeff_matX, order, V_slack):
+def Sigma_func(U, order, V_slack):
     """
     :param coeff_matU: array with voltage coefficients
     :param coeff_matX: array with inverse conjugated voltage coefficients
@@ -74,33 +73,18 @@ def Sigma_funcO(coeff_matU, coeff_matX, order, V_slack):
     if len(V_slack) > 1:
         print('Sigma values may not be correct')
     V0 = V_slack[0]
-    coeff_matU = coeff_matU / V0
-    coeff_matX = coeff_matX / V0
-    nbus = coeff_matU.shape[1]
-    complex_type = nb.complex128
-    #sigmes = np.zeros(nbus, dtype=complex_type)
-    sigmes = np.zeros(nbus, dtype=complex)
-    if order % 2 == 0:
-        M = int(order / 2) - 1
-    else:
-        M = int(order / 2)
-    for d in range(nbus):
-        a = coeff_matU[1:2 * M + 2, d]
-        #print(a[0])
-        #a[0] = a[0] + coeff_matU[0, d] * V0 - 1  # provo si va. prou bé
-        b = coeff_matX[0:2 * M + 1, d]
-        #C = np.zeros((2 * M + 1, 2 * M + 1), dtype=complex_type)
-        C = np.zeros((2 * M + 1, 2 * M + 1), dtype=complex)
-        for i in range(2 * M + 1):
-            if i < M:
-                C[1 + i:, i] = a[:2 * M - i]
-            else:
-                C[i - M:, i] = - b[:3 * M - i + 1]
-        lhs = np.linalg.solve(C, -a)
-        sigmes[d] = np.sum(lhs[M:])/(np.sum(lhs[:M]) + 1)
-        sigmes[d] = sigmes[d] + (coeff_matU[0, d] * V0 - 1)  # provo per la correcció, va prou bé. MILLOR AQUESTA CORRECCIÓ
-
-    return sigmes
+    u = U / V0
+    x = np.zeros(len(u), dtype=complex)
+    x[0] = 1 / np.conj(u[0])
+    def conv(x, u, i):
+        suma = 0
+        for k in range(i):
+            suma = suma + x[k] * np.conj(u[i-k])
+        return suma
+    for i in range(1, len(u)):
+        x[i] = -conv(x, u, i) / np.conj(u[0])
+    print((sum(u) - 1) / sum(x))
+    return (sum(u) - 1) / sum(x)
 
 def thevenin_funcX2(U, X, i):
     n = len(U)
@@ -121,21 +105,6 @@ def thevenin_funcX2(U, X, i):
     T_21 = np. zeros(n, dtype=complex)
     T_20 = np. zeros(n, dtype=complex)
 
-    """
-    r_0[0] = -1
-    r_1[0:n-1] = U[1:n]
-    r_2[0:n-2] = U[2:n] - U[1] * X[1:n-1]
-
-    T_00[0] = -1
-    T_01[0] = -1
-    T_02[0] = -1
-    T_10[0] = 0
-    T_11[0] = 1
-    T_12[0] = 1
-    T_20[0] = 0
-    T_21[0] = 0
-    T_22[0] = -U[1]
-    """
     #A LA NOVA MANERA, CONSIDERANT QUE U[0] POT SER DIFERENT D'1:
     r_0[0] = -1
     r_1[0:n - 1] = U[1:n] / U[0]
@@ -222,14 +191,12 @@ def theta(U_inicial):
         for m in range(k+1):
             suma = suma + U[m]
         return suma
-
     n = len(U_inicial)
     U = np.zeros(n, dtype=complex)
     U[:] = U_inicial[:]
     mat = np.zeros((n, n+1), dtype=complex)
     for i in range(n):
         mat[i, 1] = S(U, i)  # plena de sumes parcials
-
     for j in range(2, n+1):
         if j % 2 == 0:
             for i in range(0, n+1-j):
@@ -238,7 +205,6 @@ def theta(U_inicial):
             for i in range(0, n + 1 - j):
                 mat[i, j] = mat[i+1, j-2] + ((mat[i+2, j-2] - mat[i+1, j-2]) * (mat[i+2, j-1] - mat[i+1, j-1])) \
                             / (mat[i+2, j-1] - 2 * mat[i+1, j-1] + mat[i, j-1])
-
     return mat[0, n-1]  # mirar si n està bé
 
 def aitken(U):
@@ -312,8 +278,6 @@ def epsilon(Sn, n, E):
 
     return estim
 
-
-
 #@nb.njit("(c8)(c16[:, :], c16[:, :], i8, i8, i8)")
 def conv(A, B, c, i, tipus):
     if tipus == 1:
@@ -341,22 +305,25 @@ A[df_top.iloc[range(nl), 0], range(nl)] = 1  # buses names must be >= 0 and inte
 A[df_top.iloc[range(nl), 1], range(nl)] = -1
 
 Yseries = np.dot(np.dot(A, L), np.transpose(A))
+
+Yseries_real = np.zeros((n,n), dtype=complex)
+Yseries_real[:,:] = Yseries_real[:,:]
+
 for i in range(nl):  # passejo per totes les línies
     tap = df_top.iloc[i, 5]
     if tap != 1:
         # element Ys/c**2
         Yseries[df_top.iloc[i, 0], df_top.iloc[i, 0]] += -1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) + 1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) / (tap ** 2)
-
         # in fact, remains the same
         Yseries[df_top.iloc[i, 1], df_top.iloc[i, 1]] += -1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) + 1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j)
-
         # out of the diagonal element, -Ys/conj(c)
         Yseries[df_top.iloc[i, 0], df_top.iloc[i, 1]] += +1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) + -1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) / np.conj(tap)
-
         # out of the diagonal element, -Ys/c
         Yseries[df_top.iloc[i, 1], df_top.iloc[i, 0]] += +1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) + -1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) / tap
 
 Yseries = csc_matrix(Yseries)
+Yseries_real = csc_matrix(Yseries_real)
+
 
 print('Yseries')
 print(Yseries.toarray())
@@ -452,6 +419,8 @@ Q = np.zeros((prof, npqpv), dtype=complex)  # unknown reactive powers
 vec_W = vec_V * vec_V
 dimensions = 2 * npq + 3 * npv  # number of unknowns
 Yred = Yseries[np.ix_(pqpv, pqpv)]  # admittance matrix without slack buses
+Yred_real = Yseries_real[np.ix_(pqpv, pqpv)]
+#Ydif = Yred_real-Yred
 G = np.real(Yred)  # real parts of Yij
 B = np.imag(Yred)  # imaginary parts of Yij
 
@@ -495,6 +464,8 @@ X_im[0, :] = X[0, :].imag
 valor = np.zeros(npqpv, dtype=complex)
 
 prod = np.dot((Ysl[pqpv_, :]), V_sl[:])
+
+
 
 if npq > 0:
     valor[pq_] = prod[pq_] - Ysl[pq_].sum(axis=1) + (vec_P[pq_] - vec_Q[pq_] * 1j) * X[0, pq_] + U[0, pq_] * vec_shunts[pq_, 0]
@@ -625,32 +596,28 @@ S_dif[sl] = np.nan
 
 U_pade = pade4all(prof - 1, U, 1)
 V_slx = np.array(V_sl)
-Sigma = Sigma_funcO(U, X, prof - 1, V_slx)
+
+#Sigma = [Sigma_func(U[:,i], prof - 1, V_slx) for i in range(npqpv)]
 
 U_pa[pqpv] = U_pade
 U_pa[sl] = np.nan
 
-Sig_re[pqpv] = np.real(Sigma)
-Sig_im[pqpv] = np.imag(Sigma)
+U_sigx = U_pade / V_sl[0]
+Sigmax = (U_sigx - 1) * np.conj(U_sigx)  # càlcul directe, avaluada a s=1
+
+
+Sig_re[pqpv] = np.real(Sigmax)
+Sig_im[pqpv] = np.imag(Sigmax)
 Sig_re[sl] = np.nan
 Sig_im[sl] = np.nan
 
-
-# CÀLCUL DE VOLTATGES EXACTE AMB SIGMA AMB LA MODIFICACIÓ... INTUEIXO QUE NO S'HI GUANYA GAIRE
-E = np.zeros(n, dtype=complex)
-E[sl] = np.nan
-E[pqpv] = U[0, :] / V_sl[0]
-#print(E)
-# FI CÀLCUL V AMB SIGMES EXACTES
-
-U_sig[:] = (np.sqrt(0.25+Sig_re-Sig_im**2) + 0.5) + Sig_im * 1j
 
 for i in range(npqpv):
     U_th[i] = thevenin_funcX2(U[:, i], X[:, i], 1)
 
 U_th[pqpv] = U_th[pqpv_]
 U_th[sl] = np.nan
-#print(U_th)
+
 
 #AITKEN. FUNCIONA
 for i in range(npqpv):
@@ -705,13 +672,13 @@ df = pd.DataFrame(np.c_[np.abs(U_fi), np.angle(U_fi), np.abs(U_pa), np.angle(U_p
                                  'I error', 'S error', 'Sigma re', 'Sigma im'])
 """
 #IGUAL PERÒ SENSE ERRORS D'INTENSITAT
-df = pd.DataFrame(np.c_[np.abs(U_fi), np.angle(U_fi), np.abs(U_pa), np.angle(U_pa), np.abs(U_sig), np.angle(U_sig),
+df = pd.DataFrame(np.c_[np.abs(U_fi), np.angle(U_fi), np.abs(U_pa), np.angle(U_pa),
                         np.abs(U_th), np.abs(U_eps), np.angle(U_eps), np.abs(U_ait), np.angle(U_ait), np.abs(U_rho),
                         np.angle(U_rho), np.abs(U_theta), np.angle(U_theta), np.abs(U_eta), np.angle(U_eta),
                         np.real(P_fi), np.real(Q_fi), np.abs(S_dif), np.real(Sig_re), np.real(Sig_im)],
-                        columns=['|V| sum', 'Angle sum', '|V| Padé', 'Angle Padé', '|V| Sigma', 'Angle Sigma',
-                                 '|V| Thévenin', '|V| Epsilon', 'Angle Epsilon', '|V| Aitken', 'Angle Aitken',
-                                 '|V| Rho', 'Angle Rho', '|V| Theta', 'Angle Theta', '|V| Eta', 'Angle Eta', 'P', 'Q',
+                        columns=['|V| sum', 'Ang. sum', '|V| Padé', 'Ang. Padé',
+                                 '|V| Thévenin', '|V| Epsilon', 'Ang. Epsilon', '|V| Aitken', 'Ang. Aitken',
+                                 '|V| Rho', 'Ang. Rho', '|V| Theta', 'Ang. Theta', '|V| Eta', 'Ang. Eta', 'P', 'Q',
                                  'S error', 'Sigma re', 'Sigma im'])
 
 
@@ -730,7 +697,11 @@ else:
 
 print('Power mismatch:', err)
 
-Ybus= Ybus.todense()
+#Ybus= Ybus.todense()
 #print(Ybus)
-
-Zbus = np.linalg.inv(Ybus)
+#Zbus = np.linalg.inv(Ybus)
+U_sig[sl] = 1.06
+print(U_sig)
+Scalc = U_sig * np.conj(Ybus * U_sig)
+diff = S0 - Scalc
+print(diff)
