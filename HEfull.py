@@ -1,3 +1,5 @@
+#IGUAL QUE HEfull, és només per tenir-ne una còpia
+
 # AUTHORS: Santiago Peñate Vera and Josep Fanals Batllori
 # CONTACT:  santiago.penate.vera@gmail.com, u1946589@campus.udg.edu
 # thanks to Llorenç Fanals Batllori for his help at coding
@@ -385,7 +387,7 @@ Ysl = Ysl1[pqpv, :]
 # --------------------------- INITIAL DATA: BUSES INFORMATION. DONE
 
 # --------------------------- PREPARING IMPLEMENTATION
-prof = 300  # depth
+prof = 90  # depth
 U = np.zeros((prof, npqpv), dtype=complex)  # voltages
 U_re = np.zeros((prof, npqpv), dtype=float)  # real part of voltages
 U_im = np.zeros((prof, npqpv), dtype=float)  # imaginary part of voltages
@@ -396,7 +398,7 @@ Q = np.zeros((prof, npqpv), dtype=complex)  # unknown reactive powers
 vec_W = vec_V * vec_V
 dimensions = 2 * npq + 3 * npv  # number of unknowns
 Yred = Yseries[np.ix_(pqpv, pqpv)]  # admittance matrix without slack buses
-Yred_real = Yseries_real[np.ix_(pqpv, pqpv)]
+#Yred_real = Yseries_real[np.ix_(pqpv, pqpv)]
 #Ydif = Yred_real-Yred
 G = np.real(Yred)  # real parts of Yij
 B = np.imag(Yred)  # imaginary parts of Yij
@@ -441,7 +443,6 @@ X_im[0, :] = X[0, :].imag
 valor = np.zeros(npqpv, dtype=complex)
 
 prod = np.dot((Ysl[pqpv_, :]), V_sl[:])
-
 
 
 if npq > 0:
@@ -492,7 +493,7 @@ X_im[1, :] = X[1, :].imag
 
 # .......................CALCULATION OF TERMS [1]. DONE
 
-range_pqpv = np.arange(npqpv)  # range of pqpv buses for the X coefficient
+range_pqpv = np.arange(npqpv)  # range of pqpv buses for the X coefficient. Cal?
 
 for c in range(2, prof):  # c defines the current depth
     if npq > 0:
@@ -612,7 +613,7 @@ U_ait[sl] = np.nan
 
 Ux2 = np.zeros((prof, npqpv), dtype=complex)  # cal tornar a agafar els valors perquè a alguna funció tallo la sèrie
 Ux2[:,:] = Ux[:,:]
-
+"""
 #EPSILON ACCELERADES
 for i in range(npqpv):
     U_eps[i] = epsilon(sum(Ux[:, i]), 10, Ux[:, i])  # no agafar tots els coeficients, salta error
@@ -643,6 +644,7 @@ U_eta[pqpv] = U_eta[pqpv_]
 U_eta[sl] = np.nan
 #print(abs(U_eta))
 #FI ETA
+"""
 
 s_pos = 1 / (2 * (abs(np.real(Sig_re) + np.real(Sig_im) * 1j) - np.real(Sig_re)))  #  és la s+
 s_neg = - 1 / (2 * (abs(np.real(Sig_re) + np.real(Sig_im) * 1j) + np.real(Sig_re)))  #  és la s-
@@ -673,6 +675,8 @@ if npq > 0:
 else:
     err = max(abs(np.r_[diff[pqpv].real]))
 print('Power mismatch:', err)
+print('Power mismatch meu:', max(np.abs(S_dif)))
+print('diferència: ',abs(diff))
 
 
 #SIGMA, s a la que convergeix, Domb-Sykes
@@ -706,10 +710,10 @@ sx = np.zeros(npqpv)
 for i in range(npqpv):
     sx[i] = s_conv(U[:, i], 0.00000000001)
 
-print(sx)
+#print(sx)
 
 bb = np.zeros((prof, npqpv), dtype=complex)  # voltages
-print(Uxfi[25,1])
+#print(Uxfi[25,1])
 
 for j in range(npqpv):
     for i in range(3, len(U)-1):
@@ -722,23 +726,289 @@ vec_1n = np.zeros(prof)
 for i in range(3, prof):
     vec_1n[i] = 1 / i
     #vec_1n[i] = i
-print(vec_1n)
+#print(vec_1n)
 
-plt.plot(vec_1n[50:len(U)], abs(bb[50:len(U), 29]), 'ro', markersize=2)
+plt.plot(vec_1n[200:len(U)-1], abs(bb[200:len(U)-1, 29]), 'ro', markersize=2)  # a partir de 50 per no agafar els primers
 
 plt.show()
 
-print(abs(bb[prof-2, 29]))
-print(abs(bb[50:, 29]))
-print(vec_1n[50:])
+print('punt de convergència:'+str(abs(bb[prof-2, :])))
+print('màxim punt de convergència:'+str(max(abs(bb[prof-2, :]))))
+
 
 writer = pd.ExcelWriter('DombSykes.xlsx', engine='xlsxwriter')
 
 df1 = pd.DataFrame(np.c_[abs(bb[50:, 29]), vec_1n[50:]])
-
-
-
 df1.to_excel(writer, header=False, index=False)
-
-
 writer.save()
+
+
+############# PADÉ - WEIERSTRASS ############## ESTÀ ACABAT PERÒ FALTA REVISAR PERQUÈ NO VA
+
+prof_pw = 60  # defineixo una altra profunditat, crec que puc i no ha de passar res dolent
+
+def valor_num(U, s):  # per calcular V(s0)
+    val = 0
+    for k in range(len(U)):
+        val += U[k] * s**k
+    return val
+
+s0 = 0.9  # s0 = 0.9 com podria ser un altre valor... veure que convé més
+U_s0 = np.zeros(npqpv, dtype=complex)
+Q_s0 = np.zeros(npqpv, dtype=complex)
+
+for i in range(npqpv):  # substituint s0 simplement
+    U_s0[i] = valor_num(Uxfi[:, i], s0)
+    Q_s0[i] = valor_num(Q[:, i], s0)
+
+#calculant amb Padé
+#U_s0[range_pqpv] = pade4all(prof - 1, Uxfi[:, range_pqpv], s0)
+#Q_s0[pv_] = pade4all(prof - 1, Q[:, pv_], s0)
+
+
+print('U(s0)'+str(abs(U_s0)))
+print('Q(s0)'+str(Q_s0))
+
+Yreddense=csc_matrix.todense(Yred)
+Yredhat = np.zeros((npqpv, npqpv), dtype=complex)
+
+Yredhat[:,:] = Yreddense[:,:]
+
+for i in range(npqpv):
+    for j in range(npqpv):
+        if i==j:
+            Yredhat[i,j] = Yredhat[i, j] * U_s0[j] * np.conj(U_s0[i]) - s0 * abs(U_s0[i]) ** 2 * vec_shunts[i, 0]
+        else:
+            Yredhat[i, j] = Yredhat[i, j] * U_s0[j] * np.conj(U_s0[i])
+
+Yh = csc_matrix(Yredhat)
+Gh = np.real(Yredhat)  # real parts of Yij
+Bh = np.imag(Yredhat)  # imaginary parts of Yij
+
+Up = np.zeros((prof_pw, npqpv), dtype=complex)  # voltatges nous, V'
+Up_re = np.zeros((prof_pw, npqpv), dtype=complex)
+Up_im = np.zeros((prof_pw, npqpv), dtype=complex)
+Xp = np.zeros((prof_pw, npqpv), dtype=complex)
+Xp_re = np.zeros((prof_pw, npqpv), dtype=complex)
+Xp_im = np.zeros((prof_pw, npqpv), dtype=complex)
+Qp = np.zeros((prof_pw, npqpv), dtype=complex)  # unknown reactive powers
+
+RHS = np.zeros(npqpv, dtype=complex)
+
+############# TERMES [0] ##############
+
+RHS[:] = np.conj(U_s0[:]) * Ysl[:, 0] + s0 * np.conj(U_s0[:]) * Ysl[:, 0] * V_sl[:] - s0 * np.conj(U_s0[:]) * Ysl[:, 0]
+#print(RHS)
+
+Up[0, :] = spsolve(Yh, RHS)
+Up_re[0, :] = np.real(Up[0, :])
+Up_im[0, :] = np.imag(Up[0, :])
+Xp[0, :] = 1 / np.conj(Up[0, :])
+Xp_re[0, :] = np.real(Xp[0, :])
+Xp_im[0, :] = np.imag(Xp[0, :])
+
+#print(Up[0,:])
+
+
+############# TERMES [1] ##############
+
+
+if npq > 0:
+    valor[pq_] = (1 - s0) * abs(U_s0[pq_]) ** 2 * vec_shunts[pq_, 0] * Up[0, pq_] + \
+                s0 * (vec_P[pq_] - vec_Q[pq_] * 1j) * Xp[0, pq_] + (1 - s0) * np.conj(U_s0[pq_]) * Ysl[pq_, 0] * V_sl[:] \
+                - (1 - s0) * np.conj(U_s0[pq_]) * Ysl[pq_, 0]
+
+
+if npv > 0:
+    valor[pv_] = (1 - s0) * abs(U_s0[pv_]) ** 2 * vec_shunts[pv_, 0] * Up[0, pv_] + \
+                s0 * (vec_P[pv_] - Q_s0[pv_] * 1j) * Xp[0, pv_] + (1 - s0) * np.conj(U_s0[pv_]) * Ysl[pv_, 0] * V_sl[:] \
+                - (1 - s0) * np.conj(U_s0[pv_]) * Ysl[pv_, 0]
+    RHS = np.r_[valor.real,
+                valor.imag,
+                s0 * (vec_W[pv_] / abs(U_s0[pv_]) ** 2 - np.real(Up[0, pv_] * np.conj(Up[0, pv_])))]  #faltava aquest s0 multiplicant a tot!!!!
+
+    VRE = coo_matrix((2 * Up_re[0, pv_], (np.arange(npv), pv_)), shape=(npv, npqpv)).tocsc()
+    VIM = coo_matrix((2 * Up_im[0, pv_], (np.arange(npv), pv_)), shape=(npv, npqpv)).tocsc()
+    XIM = coo_matrix((-Xp_im[0, pv_] * s0, (pv_, np.arange(npv))), shape=(npqpv, npv)).tocsc()
+    XRE = coo_matrix((Xp_re[0, pv_] * s0, (pv_, np.arange(npv))), shape=(npqpv, npv)).tocsc()
+    EMPTY = csc_matrix((npv, npv))
+
+    MAT = vstack((hstack((Gh, -Bh, XIM)),
+                  hstack((Bh, Gh, XRE)),
+                  hstack((VRE, VIM, EMPTY))), format='csc')
+
+else:
+    # compose the right-hand side vector
+    RHS = np.r_[valor.real,
+                valor.imag]
+    MAT = vstack((hstack((Gh, -Bh)),
+                  hstack((Bh, Gh))), format='csc')
+
+#print(RHS)
+#print('MAT')
+#print(MAT.toarray())
+
+# factorize (only once)
+MAT_LU = factorized(MAT.tocsc())
+
+# solve
+LHS = MAT_LU(RHS)
+
+Up_re[1, :] = LHS[:npqpv]
+Up_im[1, :] = LHS[npqpv:2 * npqpv]
+if npv > 0:
+    Qp[0, pv_] = LHS[2 * npqpv:]
+
+Up[1, :] = Up_re[1, :] + Up_im[1, :] * 1j
+Xp[1, :] = (-Xp[0, :] * np.conj(Up[1, :])) / np.conj(Up[0, :])
+Xp_re[1, :] = Xp[1, :].real
+Xp_im[1, :] = Xp[1, :].imag
+
+#print(Up[1, :])  # dóna un ordre de magnitud coherent
+
+
+### CONVOLUCIONS ###
+
+def convQX1(Qpx, Xpx, c):  # Qpx i Xpx en forma de vectors, matriu no
+    suma = 0
+    for k in range(c - 1):
+        suma = suma + Qpx[k] * Xpx[c - 1 - k]
+    return suma
+
+def convQX2(Qpx, Xpx, c):
+    suma = 0
+    for k in range(c - 1):
+        suma = suma + Qpx[k] * Xpx[c - 2 - k]
+    return suma
+
+def convUX(Upx, Xpx, c):
+    suma = 0
+    for k in range(c):
+        suma = suma + Xpx[k] * np.conj(Upx[c-k])
+    return suma
+
+def convUU(Upx, c):
+    suma = 0
+    for k in range(1, c):
+        suma = suma + Upx[k] * np.conj(Upx[c-k])
+    return suma
+
+############# TERMES [2] ##############
+if npq > 0:
+    valor[pq_] = (1 - s0) * abs(U_s0[pq_]) ** 2 * vec_shunts[pq_, 0] * Up[1, pq_] \
+                 + (1 - s0) * (vec_P[pq_] - vec_Q[pq_] * 1j) * Xp[0, pq_] \
+                 + s0 * (vec_P[pq_] - vec_Q[pq_] * 1j) * Xp[1, pq_]
+
+if npv > 0:
+    valor[pv_] = (1 - s0) * abs(U_s0[pv_]) ** 2 * vec_shunts[pv_, 0] * Up[1, pv_] \
+                 + s0 * (vec_P[pv_] - Q_s0[pv_] * 1j) * Xp[1, pv_] \
+                 - s0 * convQX1(Qp[:, pv_], Xp[:, pv_], 2) * 1j \
+                 + (1 - s0) * (vec_P[pv_] - Q_s0[pv_] * 1j) * Xp[0, pv_] \
+                 - (1 - s0) * convQX2(Qp[:, pv_], Xp[:, pv_], 2) * 1j
+
+    RHS = np.r_[valor.real,
+                valor.imag,
+                (1 - s0) * (vec_W[pv_] / abs(U_s0[pv_]) ** 2 - np.real(Up[0, pv_] * np.conj(Up[0, pv_]))) \
+                - np.real(Up[1, pv_] * np.conj(Up[1, pv_]))]
+else:
+    # compose the right-hand side vector
+    RHS = np.r_[valor.real,
+                valor.imag]
+
+# no cal tornar a construir la matriu, és idèntica
+LHS = MAT_LU(RHS)
+
+Up_re[2, :] = LHS[:npqpv]
+Up_im[2, :] = LHS[npqpv:2 * npqpv]
+if npv > 0:
+    Qp[1, pv_] = LHS[2 * npqpv:]
+
+Up[2, :] = Up_re[2, :] + 1j * Up_im[2, :]
+
+# fer la funció de la convolució Xp * Up en què es troba Xp. CONTINUAR A PART D'AQUÍ
+
+Xp[2, :] = - convUX(Up[:, range_pqpv], Xp[:, range_pqpv], 2) / np.conj(Up[0, range_pqpv])
+Xp_re[2, :] = np.real(Xp[2, :])
+Xp_im[2, :] = np.imag(Xp[2, :])
+
+#print(Up[2, :])  # també convergeix, sembla bastant coherent
+
+############# TERMES [c>=3] ##############
+
+
+for c in range(3, prof_pw):
+    if npq > 0:
+        valor[pq_] = (1 - s0) * abs(U_s0[pq_]) ** 2 * vec_shunts[pq_, 0] * Up[c-1, pq_] \
+                     + (1 - s0) * (vec_P[pq_] - vec_Q[pq_] * 1j) * Xp[c-2, pq_] \
+                     + s0 * (vec_P[pq_] - vec_Q[pq_] * 1j) * Xp[c-1, pq_]
+
+    if npv > 0:
+        valor[pv_] = (1 - s0) * abs(U_s0[pv_]) ** 2 * vec_shunts[pv_, 0] * Up[c-1, pv_] \
+                     + s0 * (vec_P[pv_] - Q_s0[pv_] * 1j) * Xp[c-1, pv_] \
+                     - s0 * convQX1(Qp[:, pv_], Xp[:, pv_], c) * 1j \
+                     + (1 - s0) * (vec_P[pv_] - Q_s0[pv_] * 1j) * Xp[c-2, pv_] \
+                     - (1 - s0) * convQX2(Qp[:, pv_], Xp[:, pv_], c) * 1j
+
+        RHS = np.r_[valor.real,
+                    valor.imag,
+                    -convUU(Up[:, pv_], c)]
+    else:
+        # compose the right-hand side vector
+        RHS = np.r_[valor.real,
+                    valor.imag]
+
+    # no cal tornar a construir la matriu, és idèntica
+    LHS = MAT_LU(RHS)
+
+    Up_re[c, :] = LHS[:npqpv]
+    Up_im[c, :] = LHS[npqpv:2 * npqpv]
+    if npv > 0:
+        Qp[c-1, pv_] = LHS[2 * npqpv:]
+
+    Up[c, :] = Up_re[c, :] + 1j * Up_im[c, :]
+
+    # fer la funció de la convolució Xp * Up en què es troba Xp. CONTINUAR A PART D'AQUÍ
+
+    Xp[c, :] = - convUX(Up[:, range_pqpv], Xp[:, range_pqpv], c) / np.conj(Up[0, range_pqpv])
+    Xp_re[c, :] = np.real(Xp[c, :])
+    Xp_im[c, :] = np.imag(Xp[c, :])
+
+########## TRACTAMENT DE DADES ###########
+
+print('Últim element de Up: '+str(Up[prof_pw - 1, :]))  # convergeix bé
+
+
+Upf = sum(Up[:, range_pqpv])
+Upfpade = pade4all(prof_pw - 1, Up, 1)
+Qpfpade = pade4all(prof_pw - 2, Qp[:,pv_], 1)
+print('Padé de la tensió prima:'+str(abs(Upfpade)))
+print('V final bona: '+str(abs(U_s0 * Upfpade)))
+#print(sum(Qp[:, range_pqpv]))
+
+Qpfi = np.zeros(n, dtype=complex)
+Upfi = np.zeros(n, dtype=complex)
+
+
+Upfi[sl] = V_sl
+
+
+Qpfi[pqpv] = vec_Q[:]
+Qpfi[pv] = Qpfpade[:] + Q_s0[pv_]
+Qpfi[sl] = np.nan
+
+Upfi[pqpv] = U_s0 * Upfpade
+
+
+Scalc = Upfi * np.conj(Ybus * Upfi)  # assumint que Padé és el que dóna millor
+S0 = np.real(P_fi) + 1j * np.real(Qpfi)
+diff = S0 - Scalc
+
+#TORNO A IMPRIMIR EL DATAFRAME, NOMÉS LA PART QUE INTERESSA
+
+df2 = pd.DataFrame(np.c_[np.abs(Upfi), np.angle(Upfi), np.abs(diff), np.real(Qpfi)],
+                        columns=['|V|', 'A', 'S error', 'Q'])
+
+print(df2)
+
+print(max(abs(diff)))
+print(err)
