@@ -30,7 +30,7 @@ nl = df_top.shape[0]  # number of lines
 
 A = np.zeros((n, nl), dtype=int)  # incidence matrix
 L = np.zeros((nl, nl), dtype=complex)  # matriu que conté les branques sèrie
-np.fill_diagonal(L, [1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) for i in range(nl)])
+np.fill_diagonal(L, [1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) for i in range(nl) if df_top.iloc[i, 5] == 1])
 A[df_top.iloc[range(nl), 0], range(nl)] = 1  # buses names must be >= 0 and integers
 A[df_top.iloc[range(nl), 1], range(nl)] = -1
 
@@ -182,14 +182,14 @@ valor[pq_] = prod[pq_] \
              - Yshunts[pq_] * U[0, pq_] \
              + (vec_P[pq_] - vec_Q[pq_] * 1j) * X[0, pq_] \
              - prod2[pq_] \
-             - np.sum(Ytapslack[pq_, :], axis=1)
+
 
 valor[pv_] = prod[pv_] \
              - np.sum(Yslack[pv_, :], axis=1) \
              - Yshunts[pv_] * U[0, pv_] \
              + vec_P[pv_] * X[0, pv_] \
              - prod2[pv_] \
-             - np.sum(Ytapslack[pv_, :], axis=1)
+
 
 RHS = np.r_[valor.real, valor.imag, W[pv_] - 1]
 
@@ -249,14 +249,12 @@ c = 2
 valor[pq_] = - Yshunts[pq_] * U[c-1, pq_] \
              + (vec_P[pq_] - vec_Q[pq_] * 1j) * X[c-1, pq_] \
              - prod2[pq_] \
-             - np.sum(Ytapslack[pq_, :], axis=1) * (-1) \
              - prod3[pq_]
 
 valor[pv_] = - Yshunts[pv_] * U[c-1, pv_] \
              + vec_P[pv_] * X[c-1, pv_] \
              - 1j * convQX(Q, X, pv_, c) \
              - prod2[pv_] \
-             - np.sum(Ytapslack[pv_, :], axis=1) * (-1) \
              - prod3[pv_]
 
 RHS = np.r_[valor.real, valor.imag, -convV(U, pv_, c)]
@@ -396,11 +394,7 @@ U_eta[sl] = np.nan
 
 #ERRORS
 S_out = np.asarray(U_pa) * np.conj(np.asarray(np.dot(Ybus, U_pa)))  # computat amb tensions de Padé
-print(U_pa)
-print(Ybus)
-print(Yseries_slack)
 S_in = (Pfi[:] + 1j * Qfi[:])
-
 error = S_in - S_out  # mismatch de potències
 #FI ERRORS
 
