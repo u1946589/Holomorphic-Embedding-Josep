@@ -28,9 +28,10 @@ df_bus = pd.read_excel('Datax.xlsx', sheet_name='Busos')  # Dataframe of the bus
 n = df_bus.shape[0]  # number of buses, including slacks
 nl = df_top.shape[0]  # number of lines
 
+
 A = np.zeros((n, nl), dtype=int)  # incidence matrix
 L = np.zeros((nl, nl), dtype=complex)  # matriu que conté les branques sèrie
-np.fill_diagonal(L, [1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) for i in range(nl) if df_top.iloc[i, 5] == 1])
+np.fill_diagonal(L, [1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) for i in range(nl)])
 A[df_top.iloc[range(nl), 0], range(nl)] = 1  # buses names must be >= 0 and integers
 A[df_top.iloc[range(nl), 1], range(nl)] = -1
 
@@ -38,14 +39,14 @@ Yseries = np.dot(np.dot(A, L), np.transpose(A))
 Yseries_slack = np.zeros((n,n), dtype=complex)
 Yseries_slack[:,:] = Yseries[:,:]
 
-Ytap = np.zeros((n, n), dtype=complex)
+Ytap = np.zeros((n, n), dtype=complex)  # diferència entre Ytapreal i Yseries (aquesta conté Ys simètrica)
 
 for i in range(nl):
     if df_top.iloc[i, 5] != 1:
-        Ytap[df_top.iloc[i, 0], df_top.iloc[i, 0]] += 1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) / (df_top.iloc[i, 5] * np.conj(df_top.iloc[i, 5]))
-        Ytap[df_top.iloc[i, 1], df_top.iloc[i, 1]] += 1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j)
-        Ytap[df_top.iloc[i, 0], df_top.iloc[i, 1]] += - 1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) / (np.conj(df_top.iloc[i, 5]))
-        Ytap[df_top.iloc[i, 1], df_top.iloc[i, 0]] += - 1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) / (df_top.iloc[i, 5])
+        Ytap[df_top.iloc[i, 0], df_top.iloc[i, 0]] += 1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) / (df_top.iloc[i, 5] * np.conj(df_top.iloc[i, 5])) - 1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j)
+        Ytap[df_top.iloc[i, 1], df_top.iloc[i, 1]] += 1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) - 1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j)
+        Ytap[df_top.iloc[i, 0], df_top.iloc[i, 1]] += - 1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) / (np.conj(df_top.iloc[i, 5])) + 1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j)
+        Ytap[df_top.iloc[i, 1], df_top.iloc[i, 0]] += - 1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j) / (df_top.iloc[i, 5]) + 1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j)
 
 vec_Pi = np.zeros(n, dtype=float)  # data of active power
 vec_Qi = np.zeros(n, dtype=float)  # data of reactive power
@@ -97,21 +98,20 @@ for i in range(n):  # de la sheet busos
     Yshunts[df_bus.iloc[i, 0]] += df_bus.iloc[i, 6] * 1j  # no canvio el signe
 
 Yshunts_slack = np.zeros(n, dtype=complex)  #inclòs l'slack
-Yshunts_slack[:] = Yshunts[:]
+Yshunts_slack[:] = Yshunts[:]  # incloent l'slack
 
 df = pd.DataFrame(data=np.c_[Yshunts.imag, vec_Pi, vec_Qi, vec_Vi],
                   columns=['Ysh', 'P0', 'Q0', 'V0'])
 
 print(df)
 
-Yslack = np.zeros((n, n), dtype=complex)
-for i in range(nl):  # go through all rows
-    if df_top.iloc[i, 0] in sl and df_top.iloc[i, 5] == 1:  # if slack in the first column
-        Yslack[df_top.iloc[i, 1], df_top.iloc[i, 0]] += 1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j)
-    elif df_top.iloc[i, 1] in sl and df_top.iloc[i, 5] == 1:  # if slack in the second column
-        Yslack[df_top.iloc[i, 0], df_top.iloc[i, 1]] += 1 / (df_top.iloc[i, 2] + df_top.iloc[i, 3] * 1j)
 
-Yslack = Yslack[:, sl]
+
+
+Yslack = np.zeros((n, n), dtype=complex)
+
+
+Yslack = Yseries_slack[:, sl]
 
 
 # --------------------------- INITIAL DATA: BUSES INFORMATION. DONE
@@ -177,19 +177,19 @@ valor = np.zeros(npqpv, dtype=complex)
 prod = np.dot((Yslack[pqpv_, :]), V_sl[:])
 prod2 = np.dot((Ytaps[pqpv_, :]), U[0, :])
 
-valor[pq_] = prod[pq_] \
-             - np.sum(Yslack[pq_, :], axis=1) \
+valor[pq_] = - prod[pq_] \
+             + np.sum(Yslack[pq_, :], axis=1) \
              - Yshunts[pq_] * U[0, pq_] \
              + (vec_P[pq_] - vec_Q[pq_] * 1j) * X[0, pq_] \
              - prod2[pq_] \
+             - np.sum(Ytapslack[pq_, :], axis=1)
 
-
-valor[pv_] = prod[pv_] \
-             - np.sum(Yslack[pv_, :], axis=1) \
+valor[pv_] = - prod[pv_] \
+             + np.sum(Yslack[pv_, :], axis=1) \
              - Yshunts[pv_] * U[0, pv_] \
              + vec_P[pv_] * X[0, pv_] \
              - prod2[pv_] \
-
+             - np.sum(Ytapslack[pv_, :], axis=1)
 
 RHS = np.r_[valor.real, valor.imag, W[pv_] - 1]
 
@@ -249,12 +249,14 @@ c = 2
 valor[pq_] = - Yshunts[pq_] * U[c-1, pq_] \
              + (vec_P[pq_] - vec_Q[pq_] * 1j) * X[c-1, pq_] \
              - prod2[pq_] \
+             - np.sum(Ytapslack[pq_, :], axis=1) * (-1) \
              - prod3[pq_]
 
 valor[pv_] = - Yshunts[pv_] * U[c-1, pv_] \
              + vec_P[pv_] * X[c-1, pv_] \
              - 1j * convQX(Q, X, pv_, c) \
              - prod2[pv_] \
+             - np.sum(Ytapslack[pv_, :], axis=1) * (-1) \
              - prod3[pv_]
 
 RHS = np.r_[valor.real, valor.imag, -convV(U, pv_, c)]
@@ -410,4 +412,3 @@ print(df)
 
 err = max(abs(np.r_[error[0, pqpv]]))  # màxim error de potències
 print('Error màxim: ' + str(err))
-
