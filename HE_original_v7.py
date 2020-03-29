@@ -112,7 +112,7 @@ Yslack = Yseries_slack[:, sl]
 # --------------------------- INITIAL DATA: BUSES INFORMATION. DONE
 
 # --------------------------- PREPARING IMPLEMENTATION
-prof = 5  # depth
+prof = 6  # depth
 
 U = np.zeros((prof, npqpv), dtype=complex)  # voltages. Deixo de mirar l'slack
 U_re = np.zeros((prof, npqpv), dtype=float)  # real part of voltages
@@ -424,8 +424,8 @@ def vector_s0(vec, s_0):  # per calcular V(s_0)
         suma += vec[k] * s_0 ** k
     return suma
 
-s0 = 0.5
-prof_pw = 10
+s0 = 0.53
+prof_pw = 30
 
 Up = np.zeros((prof_pw, npqpv), dtype=complex)  # matriu on es guarden els coeficients de les tensions no slack primes
 Up_re = np.zeros((prof_pw, npqpv), dtype=float)
@@ -469,25 +469,23 @@ if npv > 0:
     gamma[pv_] = s0 * Pfi[pv] - Qs0[pv] * 1j
 
 Ybtilde = np.zeros((n, n), dtype=complex)  # és la simètrica, la Y^(b) amb la tilde
-
 Ybtilde[:, :] = Ybhat[:, :]
 
-
-"""
 if npq > 0:
     Ybtilde[pq, pq] += +s0 * Yshunts_slack[pq] * abs(Us0[pq]) ** 2 - gamma[pq_]
 if npv > 0:
     Ybtilde[pv, pv] += +s0 * Yshunts_slack[pv] * abs(Us0[pv]) ** 2 - gamma[pv_]
-"""
 
 Ybhatsum = np.sum(Ybhat, axis=1)
 
-
+"""
 ##NOVA MANERA, COM DIU EL LLIBRE:
 for i in range(n):
     for j in range(n):
         if i == j:
             Ybtilde[i, j] += - Ybhatsum[i]
+"""
+
 
 #!!!!!!!!!!!!!!!!!ajustament important: s=s0+s'(1-s0) -> Yb+sYa=(Yb+s0*Ya)+s'(1-s0)Ya!!!!!!!!!!!!!!!!!!!
 ### o millor incrusto amb s' i canvio una mica l'estructura del problema...
@@ -497,10 +495,22 @@ Ybtilde[:, :] += s0 * Yahat[:, :]
 Yahat[:, :] = (1 - s0) * Yahat[:, :]
 """
 
+"""
 for i in range(n):  # per agafar el que he modificicat a Yb!! ho trec d'una banda i li poso a l'altra
     for j in range(n):
         if i == j:
             Yahat[i, j] += + Ybhatsum[i]
+"""
+
+##això d'aquí sota ho he afegit ara
+if npq > 0:  # per agafar el que he modificicat a Yb!! ho trec d'una banda i li poso a l'altra
+    Yahat[pq, pq] -= +s0 * Yshunts_slack[pq] * abs(Us0[pq]) ** 2 - gamma[pq_]
+if npv > 0:
+    Yahat[pv, pv] -= +s0 * Yshunts_slack[pv] * abs(Us0[pv]) ** 2 - gamma[pv_]
+
+
+print('ybtilde', Ybtilde)
+print('yahat', Yahat)
 
 #print('suma', np.sum(Ybtilde, axis=1))  # ara sí que suma 0 (menys l'slack, és clar. ja està bé així)
 
@@ -548,21 +558,15 @@ if npv > 0:
 else:
     RHS = np.r_[valor.real, valor.imag]
 
-print('RHS', RHS)
 
 Gf = np.real(Ybtildered)  # real parts of Yij
 Bf = np.imag(Ybtildered)  # imaginary parts of Yij
 
-print('Gf', Gf)
-print('Bf', Bf)
-
 gamma_re = diags(2 * np.real(gamma[:]))
 gamma_im = diags(2 * np.imag(gamma[:]))
 
-print('gam-re', gamma_re)
-print('gam-im', gamma_im)
-
-
+#print('gam-re', gamma_re)
+#print('gam-im', gamma_im)
 
 VRE = coo_matrix((2 * Up_re[0, pv_], (np.arange(npv), pv_)), shape=(npv, npqpv)).tocsc()  # cada element ha de ser 2
 VIM = coo_matrix((2 * Up_im[0, pv_], (np.arange(npv), pv_)), shape=(npv, npqpv)).tocsc()  # cada element ha de ser 0
@@ -586,13 +590,13 @@ for i in range(npqpv):
             M1[i, j] += np.real(2 * gamma[i])
             M3[i, j] += np.imag(2 * gamma[i])
 
-print('M1', M1, M2, M3, M4)
+#print('M1', M1, M2, M3, M4)
 
 MAT = vstack((hstack((M1, M2, XIM)),
               hstack((M3, M4, XRE)),
               hstack((VRE, VIM, EMPTY))), format='csc')
 
-print('mat',MAT)
+#print('mat',MAT)
 
 MAT_LU = factorized(MAT.tocsc())
 LHS = MAT_LU(RHS)
@@ -632,6 +636,7 @@ def convU(Up, i, c):
 prod1 = np.dot(Ybtildew[pqpv_, :], Upw[2, :])  # seran tot 0
 #prod2 = np.dot(Yahatred[pqpv_, :], Up[1, :])
 #prod3 = np.dot(Yahatw[pqpv_, :], Upw[1, :])
+
 
 if npq > 0:
     valor[pq_] = - prod1[pq_] \
@@ -736,12 +741,19 @@ A2 = 0.95 * (-1 + 0.5 * 1j) * (1 / np.conj(Upfi[0]))
 #print(Ytap)
 #print(Yseries_slack)
 
-print(abs(Upa))
-print(angle(Upa))
-
 Ubona = Upfipa * Us0
 
-print(Ubona)
+Qfipv = np.zeros(npqpv, dtype=complex)
+for i in range(npqpv):
+    if i in pv_:
+        Qfipv[i] = np.sum(Qp[:, i], axis=0)
+
+if npv > 0:
+    Qfi[pv] = Qs0[pv] + Qfipv[pv_]
+
+print('Ubona: ', Ubona)
+print('Qfi: ', Qfi)
+
 
 #ERRORS
 S_out = np.asarray(Ubona) * np.conj(np.asarray(np.dot(Ybus, Ubona)))  # computat amb tensions de Padé
@@ -749,4 +761,5 @@ S_in = (Pfi[:] + 1j * Qfi[:])
 error = S_in - S_out  # mismatch de potències
 #FI ERRORS
 err = max(abs(np.r_[error[0, pqpv]]))  # màxim error de potències
-print(abs(err))
+print('Error P-W: ', abs(err))
+
