@@ -139,7 +139,10 @@ def theta(U_inicial, limit):
             for i in range(0, n + 1 - j):
                 mat[i, j] = mat[i+1, j-2] + ((mat[i+2, j-2] - mat[i+1, j-2]) * (mat[i+2, j-1] - mat[i+1, j-1])) \
                             / (mat[i+2, j-1] - 2 * mat[i+1, j-1] + mat[i, j-1])
-    return mat[0, n-1]  # mirar si n està bé
+    if limit % 2 == 0:
+        return mat[0, n-1]
+    else:
+        return mat[0, n]
 
 def rho(U, limit):  # veure si cal tallar U, o sigui, agafar per exemple els 10 primers coeficients
     def S(Um, k):
@@ -155,7 +158,10 @@ def rho(U, limit):  # veure si cal tallar U, o sigui, agafar per exemple els 10 
     for j in range(2, n+1):
         for i in range(0, n+1-j):
             mat[i, j] = mat[i+1, j-2] + (j - 1) / (mat[i+1,j-1] - mat[i, j-1])
-    return mat[0, n-1]  # provar si és aquest número, o si depèn de parell o imparell...
+    if limit % 2 == 0:
+        return mat[0, n-1]
+    else:
+        return mat[0, n]
 
 def thevenin_funcX2(U, X, i):
     n = len(U)
