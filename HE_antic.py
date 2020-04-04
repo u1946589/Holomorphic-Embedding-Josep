@@ -8,6 +8,7 @@
 # --------------------------- LLIBRERIES
 import numpy as np
 import numba as nb
+from numba import jit
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.sparse import csc_matrix, coo_matrix
@@ -22,7 +23,8 @@ pd.set_option("display.precision", 6)
 # --------------------------- FI LLIBRERIA
 
 
-# al final separar-ho per poder fer córrer amb Numba
+# al final separar-ho per poder fer córrer amb Numba?
+
 def conv(A, B, c, i, tipus):
     if tipus == 1:
         suma = [np.conj(A[k, i]) * B[c - k, i] for k in range(1, c + 1)]
@@ -309,6 +311,7 @@ Qfi[sl] = np.nan
 limit = 12  # límit per tal que els mètodes recurrents no treballin amb tots els coeficients
 if limit > prof:
     limit = prof - 1
+
 
 # SIGMA
 Ux1 = np.copy(U)

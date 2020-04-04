@@ -1,6 +1,7 @@
 #PER NO COPIAR TOTES LES FUNCIONS A L'ARXIU PRINCIPAL. IMPORTAR-LES
 import numpy as np
 import numba as nb
+from numba import jit
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.sparse import csc_matrix, coo_matrix
@@ -8,6 +9,7 @@ from scipy.sparse import lil_matrix, diags, hstack, vstack
 from scipy.sparse.linalg import spsolve, factorized
 from numpy import zeros, ones, mod, conj, array, r_, linalg, Inf, complex128, c_, r_, angle
 
+@nb.jit
 def pade4all(order, coeff_mat, s):
     """
     Computes the "order" Padè approximant of the coefficients at the approximation point s
@@ -18,22 +20,23 @@ def pade4all(order, coeff_mat, s):
     Returns:
         Padè approximation at s for all the series
     """
+    complex_type = nb.complex128
     nbus = coeff_mat.shape[1]
-    voltages = np.zeros(nbus, dtype=complex)
+    voltages = np.zeros(nbus, complex_type)
     nn = int(order / 2)
     L = nn
     M = nn
     for d in range(nbus):
         rhs = coeff_mat[L + 1:L + M + 1, d]
-        C = np.zeros((L, M), dtype=complex)
+        C = np.zeros((L, M), complex_type)
         for i in range(L):
             k = i + 1
             C[i, :] = coeff_mat[L - M + k:L + k, d]
-        b = np.zeros(rhs.shape[0] + 1, dtype=complex)
+        b = np.zeros(rhs.shape[0] + 1, complex_type)
         x = np.linalg.solve(C, -rhs)  # bn to b1
         b[0] = 1
         b[1:] = x[::-1]
-        a = np.zeros(L + 1, dtype=complex)
+        a = np.zeros(L + 1, complex_type)
         a[0] = coeff_mat[0, d]
         for i in range(L):
             val = complex(0)
@@ -49,14 +52,15 @@ def pade4all(order, coeff_mat, s):
         voltages[d] = p / q
     return voltages
 
+@nb.jit
 def eta(U_inicial, limit):
+    complex_type = nb.complex128
     n = limit
-    Um = np.zeros(n, dtype=complex)
+    Um = np.zeros(n, complex_type)
     Um[:] = U_inicial[:limit]
-    mat = np.zeros((n, n+1), dtype=complex)
+    mat = np.zeros((n, n+1), complex_type)
     mat[:, 0] = np.inf  # infinit
     mat[:, 1] = Um[:]
-
     for j in range(2, n + 1):
         if j % 2 == 0:
             for i in range(0, n + 1 - j):
@@ -64,31 +68,35 @@ def eta(U_inicial, limit):
         else:
             for i in range(0, n + 1 - j):
                 mat[i, j] = mat[i+1, j-2] + mat[i+1, j-1] - mat[i, j-1]
-    return sum(mat[0, 1:])
+    return np.sum(mat[0, 1:])
 
+@nb.jit
 def aitken(U, limit):
     def S(Um, k):
         suma = 0
         for m in range(k+1):
-            suma = suma + Um[m]
+            suma += Um[m]
         return suma
+    complex_type = nb.complex128
     Um = U[:limit]  # només els 10 primers coeficients, si no, divideix per 0 i es deteriora
     n = limit
-    T = np.zeros(n-2, dtype = complex)
+    T = np.zeros(n-2, complex_type)
     for i in range(len(T)):
         T[i] = S(Um, i) - (S(Um, i+1)**2 + S(Um, i)**2 - 2*S(Um, i+1)*S(Um, i)) / (S(Um, i+2) - 2*S(Um, i+1) + S(Um, i))
     return T[-1]  # l'últim element, entenent que és el que millor aproxima
 
+@nb.jit
 def theta(U_inicial, limit):
     def S(Um, k):
         suma = 0
         for m in range(k+1):
             suma = suma + Um[m]
         return suma
+    complex_type = nb.complex128
     n = limit
-    Um = np.zeros(n, dtype=complex)
+    Um = np.zeros(n, complex_type)
     Um[:] = U_inicial[:limit]
-    mat = np.zeros((n, n+1), dtype=complex)
+    mat = np.zeros((n, n+1), complex_type)
     for i in range(n):
         mat[i, 1] = S(Um, i)  # plena de sumes parcials
     for j in range(2, n+1):
@@ -104,15 +112,17 @@ def theta(U_inicial, limit):
     else:
         return mat[0, n]
 
+@nb.jit
 def rho(U, limit):  # veure si cal tallar U, o sigui, agafar per exemple els 10 primers coeficients
     def S(Um, k):
         suma = 0
         for m in range(k+1):
             suma = suma + Um[m]
         return suma
+    complex_type = nb.complex128
     Um = U[:limit]  # no agafar tots els coeficients, si no, salta error
     n = limit
-    mat = np.zeros((n, n+1), dtype=complex)
+    mat = np.zeros((n, n+1), complex_type)
     for i in range(n):
         mat[i, 1] = S(Um, i)  # plena de sumes parcials
     for j in range(2, n+1):
@@ -123,15 +133,17 @@ def rho(U, limit):  # veure si cal tallar U, o sigui, agafar per exemple els 10 
     else:
         return mat[0, n]
 
+@nb.jit
 def epsilon2(U, limit):
     def S(Um, k):
         suma = 0
         for m in range(k+1):
             suma = suma + Um[m]
         return suma
+    complex_type = nb.complex128
     Um = U[:limit]  # no agafar tots els coeficients, si no, salta error
     n = limit
-    mat = np.zeros((n, n+1), dtype=complex)
+    mat = np.zeros((n, n+1), complex_type)
     for i in range(n):
         mat[i, 1] = S(Um, i)  # plena de sumes parcials
     for j in range(2, n+1):
@@ -142,24 +154,26 @@ def epsilon2(U, limit):
     else:
         return mat[0, n]
 
+@nb.jit
 def thevenin_funcX2(U, X, i):
+    complex_type = nb.complex128
     n = len(U)
-    r_3 = np. zeros(n, dtype=complex)
-    r_2 = np. zeros(n, dtype=complex)
-    r_1 = np. zeros(n, dtype=complex)
-    r_0 = np. zeros(n, dtype=complex)
-    T_03 = np. zeros(n, dtype=complex)
-    T_02 = np. zeros(n, dtype=complex)
-    T_01 = np. zeros(n, dtype=complex)
-    T_00 = np. zeros(n, dtype=complex)
-    T_13 = np. zeros(n, dtype=complex)
-    T_12 = np. zeros(n, dtype=complex)
-    T_11 = np. zeros(n, dtype=complex)
-    T_10 = np. zeros(n, dtype=complex)
-    T_23 = np. zeros(n, dtype=complex)
-    T_22 = np. zeros(n, dtype=complex)
-    T_21 = np. zeros(n, dtype=complex)
-    T_20 = np. zeros(n, dtype=complex)
+    r_3 = np. zeros(n, complex_type)
+    r_2 = np. zeros(n, complex_type)
+    r_1 = np. zeros(n, complex_type)
+    r_0 = np. zeros(n, complex_type)
+    T_03 = np. zeros(n, complex_type)
+    T_02 = np. zeros(n, complex_type)
+    T_01 = np. zeros(n, complex_type)
+    T_00 = np. zeros(n, complex_type)
+    T_13 = np. zeros(n, complex_type)
+    T_12 = np. zeros(n, complex_type)
+    T_11 = np. zeros(n, complex_type)
+    T_10 = np. zeros(n, complex_type)
+    T_23 = np. zeros(n, complex_type)
+    T_22 = np. zeros(n, complex_type)
+    T_21 = np. zeros(n, complex_type)
+    T_20 = np. zeros(n, complex_type)
 
     #A LA NOVA MANERA, CONSIDERANT QUE U[0] POT SER DIFERENT D'1:
     r_0[0] = -1
@@ -207,13 +221,13 @@ def thevenin_funcX2(U, X, i):
         T_21[:] = T_22[:]
         T_22[:] = T_23[:]
 
-        r_3 = np.zeros(n, dtype=complex)
-        T_03 = np.zeros(n, dtype=complex)
-        T_13 = np.zeros(n, dtype=complex)
-        T_23 = np.zeros(n, dtype=complex)
+        r_3 = np.zeros(n, complex_type)
+        T_03 = np.zeros(n, complex_type)
+        T_13 = np.zeros(n, complex_type)
+        T_23 = np.zeros(n, complex_type)
 
-    usw = -sum(t_0) / sum(t_1)
-    sth = -sum(t_2) / sum(t_1)
+    usw = -np.sum(t_0) / np.sum(t_1)
+    sth = -np.sum(t_2) / np.sum(t_1)
 
     sigma_bo = sth / (usw * np.conj(usw))
 
@@ -223,6 +237,7 @@ def thevenin_funcX2(U, X, i):
 
     return ufinal
 
+
 def Sigma_funcO(coeff_matU, coeff_matX, order, V_slack):
     """
     :param coeff_matU: array with voltage coefficients
@@ -231,6 +246,7 @@ def Sigma_funcO(coeff_matU, coeff_matX, order, V_slack):
     :param V_slack: slack bus voltage vector. Must contain only 1 slack bus
     :return: sigma complex value
     """
+    #complex_type = nb.complex128
     if len(V_slack) > 1:
         print('Sigma values may not be correct')
     V0 = V_slack[0]

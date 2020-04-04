@@ -7,6 +7,7 @@
 # --------------------------- LLIBRERIES
 import numpy as np
 import numba as nb
+from numba import jit
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.sparse import csc_matrix, coo_matrix
@@ -233,8 +234,6 @@ def convx(u, x, i, cc):
 # .......................FI CONVOLUCIONS .......................
 
 # .......................TERMES [2] ........................
-
-
 prod2 = np.dot((Ytaps[pqpv_, :]), U[1, :])  # càlcul amb la matriu asimètrica retardat
 prod3 = np.dot((Ytapslack[pqpv_, :]), V_sl[:])  # càlcul amb la matriu asimètrica retardada pels slack
 c = 2  # profunditat actual
@@ -335,7 +334,7 @@ Pfi[sl] = np.nan
 Qfi[sl] = np.nan
 # FI PADÉ
 
-limit = 12  # límit per tal que els mètodes recurrents no treballin amb tots els coeficients
+limit = 10  # límit per tal que els mètodes recurrents no treballin amb tots els coeficients
 if limit > prof:
     limit = prof - 1
 
@@ -418,13 +417,9 @@ Ux7 = np.copy(U)
 Qx7 = np.copy(Q)
 for i in range(npqpv):
     U_eta[i] = eta(Ux7[:, i], limit)
-    if i in pq_:
-        Q_eta[i + nsl_counted[i]] = vec_Q[i]
-    elif i in pv_:
-        Q_eta[i + nsl_counted[i]] = eta(Qx7[:, i], limit)
 U_eta[pqpv] = U_eta[pqpv_]
 U_eta[sl] = V_sl
-Q_eta[sl] = np.nan
+Q_eta[:] = Qfi[:]
 # FI ETA
 
 # CÀLCUL DELS ERRORS
@@ -474,6 +469,7 @@ print('Error màxim amb Padé: ' + str(err))
 
 
 # --------------------------- PADÉ-WEIERSTRASS (P-W)
+
 def vector_s0(vec, s_0):  # per a calcular V(s_0)
     suma = 0
     for k in range(len(vec)):
