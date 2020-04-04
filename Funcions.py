@@ -49,46 +49,6 @@ def pade4all(order, coeff_mat, s):
         voltages[d] = p / q
     return voltages
 
-def epsilon(Sn, n, E):
-    """
-    Fast recursive Wynn's epsilon algorithm from:
-        NONLINEAR SEQUENCE TRANSFORMATIONS FOR THE ACCELERATION OF CONVERGENCE
-        AND THE SUMMATION OF DIVERGENT SERIES
-        by Ernst Joachim Weniger
-    Args:
-        Sn: sum of coefficients
-        n: order
-        E: Coefficients structure copy that is modified in this algorithm
-    Returns:
-    """
-    complex_type = complex128
-    Zero = complex_type(0)
-    One = complex_type(1)
-    Tiny = np.finfo(complex_type).min
-    Huge = np.finfo(complex_type).max
-
-    E[n] = Sn
-
-    if n == 0:
-        estim = Sn
-    else:
-        AUX2 = Zero
-
-        for j in range(n, 0, -1):  # range from n to 1 (both included)
-            AUX1 = AUX2
-            AUX2 = E[j-1]
-            DIFF = E[j] - AUX2
-
-            if abs(DIFF) <= Tiny:
-                E[j-1] = Huge
-            else:
-                if DIFF == 0:
-                    DIFF = Tiny
-                E[j-1] = AUX1 + One / DIFF
-
-        estim = E[n]
-    return estim
-
 def eta(U_inicial, limit):
     n = limit
     Um = np.zeros(n, dtype=complex)
@@ -158,6 +118,25 @@ def rho(U, limit):  # veure si cal tallar U, o sigui, agafar per exemple els 10 
     for j in range(2, n+1):
         for i in range(0, n+1-j):
             mat[i, j] = mat[i+1, j-2] + (j - 1) / (mat[i+1,j-1] - mat[i, j-1])
+    if limit % 2 == 0:
+        return mat[0, n-1]
+    else:
+        return mat[0, n]
+
+def epsilon2(U, limit):
+    def S(Um, k):
+        suma = 0
+        for m in range(k+1):
+            suma = suma + Um[m]
+        return suma
+    Um = U[:limit]  # no agafar tots els coeficients, si no, salta error
+    n = limit
+    mat = np.zeros((n, n+1), dtype=complex)
+    for i in range(n):
+        mat[i, 1] = S(Um, i)  # plena de sumes parcials
+    for j in range(2, n+1):
+        for i in range(0, n+1-j):
+            mat[i, j] = mat[i+1, j-2] + 1 / (mat[i+1, j-1] - mat[i, j-1])
     if limit % 2 == 0:
         return mat[0, n-1]
     else:

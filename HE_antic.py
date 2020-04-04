@@ -285,7 +285,7 @@ Sig_im = np.zeros(n, dtype=complex)  # part imaginària de sigma
 
 Ybus = Yseries - diags(vecx_shunts[:, 0])  # matriu d'admitàncies total
 
-from Funcions import pade4all, epsilon, eta, theta, aitken, Sigma_funcO, rho, thevenin_funcX2  # importar funcions
+from Funcions import pade4all, epsilon2, eta, theta, aitken, Sigma_funcO, rho, thevenin_funcX2
 
 # SUMA
 U_sum[pqpv] = np.sum(U[:, pqpv_], axis=0)
@@ -342,19 +342,19 @@ U_ait[sl] = V_sl
 Q_ait[sl] = np.nan
 # FI DELTES D'AITKEN
 
-# EPSILON ACCELERADES
+# EPSILONS DE WYNN
 Ux4 = np.copy(U)
 Qx4 = np.copy(Q)
 for i in range(npqpv):
-    U_eps[i] = epsilon(sum(Ux4[:, i]), limit, Ux4[:, i])
+    U_eps[i] = epsilon2(Ux4[:, i], limit)
     if i in pq_:
         Q_eps[i + nsl_counted[i]] = vec_Q[i]
     elif i in pv_:
-        Q_eps[i + nsl_counted[i]] = epsilon(sum(Qx4[:, i]), limit, Qx4[:, i])
+        Q_eps[i + nsl_counted[i]] = epsilon2(Qx4[:, i], limit)
 U_eps[pqpv] = U_eps[pqpv_]
 U_eps[sl] = V_sl
 Q_eps[sl] = np.nan
-# FI EPSILON ACCELERADES
+# FI EPSILONS DE WYNN
 
 # RHO
 Ux5 = np.copy(U)
